@@ -1,0 +1,9 @@
+{
+    "pr_number": 5131,
+    "title": "fix: show actionable error when LMStudio model listing fails or returns empty",
+    "description": "## Summary\n\n- Fixes a longstanding UX bug where the LMStudio model dropdown showed `--loading available models--` indefinitely after a failed or empty connection attempt, making it impossible to distinguish a failed request from one still in progress\n- Adds a red error message below the dropdown when the request completes but returns no models, prompting the user to verify their URL and server status\n- Affects both the LLM provider and embedding provider selection components\n\nCloses #5127. Related prior reports: #3519, #1338, #3656.\n\n## Test plan\n\n- [ ] Enter a valid, reachable LMStudio URL → models load and dropdown populates normally\n- [ ] Enter an unreachable URL (wrong IP, server not running, remote server not bound to network interface) → dropdown shows \"No models found\" and red error text appears below: *\"Could not reach LMStudio. Verify the URL is correct and the LMStudio server is running and accessible.\"*\n- [ ] Clear the URL field → dropdown shows \"Enter LM Studio URL first\", error text disappears\n- [ ] Fix the URL after an error (tab out of field) → loading state briefly shows, then resolves correctly\n- [ ] Same behavior confirmed in embedding provider selection\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "comments": {
+        "issue_comments": [],
+        "review_comments": []
+    }
+}
