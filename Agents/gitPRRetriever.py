@@ -3,6 +3,7 @@ from github import Github, PullRequest, Repository
 from github import Auth
 import json
 import os
+import re
 
 
 class gitPRRetriever:
@@ -24,6 +25,7 @@ class gitPRRetriever:
         repo = None
         data = {}
         pr_details = {}
+        issue_details = {"related_issue_numbers": [], "issues": []}
         pr_number = None
 
         try:
@@ -99,17 +101,89 @@ class gitPRRetriever:
                     "review_comments": review_comments,
                 },
             }
+            issue_details = self.get_related_issue_details(repo, pr, pr_details)
 
         except Exception as e:
             print(f"Error fetching PRs for {owner}/{repo_name}: {e}")
 
         try:
             if repo and pr_number is not None:
-                self.storedata(data, owner, repo.name, pr_number, pr_details)
+                self.storedata(data, owner, repo.name, pr_number, pr_details, issue_details)
         except Exception as e:
             print(f"Error storing data for {owner}/{repo_name}: {e}")
 
-    def storedata(self, data, owner, repo_name, pr_number, pr_details):
+    def get_related_issue_details(self, repo, pr, pr_details):
+        text_blobs = [
+            pr.title or "",
+            pr.body or "",
+            pr_details.get("description", ""),
+        ]
+
+        issue_comments = pr_details.get("comments", {}).get("issue_comments", [])
+        review_comments = pr_details.get("comments", {}).get("review_comments", [])
+        for comment in issue_comments:
+            text_blobs.append(comment.get("body", ""))
+        for comment in review_comments:
+            text_blobs.append(comment.get("body", ""))
+
+        linked_numbers = self.extract_issue_numbers("\n".join(text_blobs), repo.owner.login, repo.name)
+
+        issue_items = []
+        for number in sorted(linked_numbers):
+            if number == pr.number:
+                continue
+
+            try:
+                issue = repo.get_issue(number)
+
+                # Skip linked pull requests; keep only issue artifacts.
+                if issue.pull_request is not None:
+                    continue
+
+                issue_items.append(
+                    {
+                        "number": issue.number,
+                        "title": issue.title or "",
+                        "body": issue.body or "",
+                        "state": issue.state,
+                        "user": issue.user.login if issue.user else None,
+                        "labels": [label.name for label in issue.labels],
+                        "assignees": [assignee.login for assignee in issue.assignees],
+                        "comments_count": issue.comments,
+                        "created_at": issue.created_at.isoformat() if issue.created_at else None,
+                        "updated_at": issue.updated_at.isoformat() if issue.updated_at else None,
+                        "closed_at": issue.closed_at.isoformat() if issue.closed_at else None,
+                        "html_url": issue.html_url,
+                    }
+                )
+            except Exception as e:
+                print(f"Unable to fetch related issue #{number}: {e}")
+
+        return {
+            "related_issue_numbers": sorted(
+                [item["number"] for item in issue_items]
+            ),
+            "issues": issue_items,
+        }
+
+    def extract_issue_numbers(self, text, owner, repo_name):
+        issue_numbers = set()
+        if not text:
+            return issue_numbers
+
+        patterns = [
+            rf"(?<![A-Za-z0-9_])#(\d+)\b",
+            rf"\b{re.escape(owner)}/{re.escape(repo_name)}#(\d+)\b",
+            rf"https?://github\.com/{re.escape(owner)}/{re.escape(repo_name)}/issues/(\d+)\b",
+        ]
+
+        for pattern in patterns:
+            for match in re.findall(pattern, text):
+                issue_numbers.add(int(match))
+
+        return issue_numbers
+
+    def storedata(self, data, owner, repo_name, pr_number, pr_details, issue_details):
         changed_code = {}
         base_code = {}
         merged_code = {}
@@ -134,6 +208,9 @@ class gitPRRetriever:
 
         with open(f"{folder_path}/pr_details.json", "w", encoding="utf-8") as f:
             json.dump(pr_details, f, indent=4, ensure_ascii=False)
+
+        with open(f"{folder_path}/issue.json", "w", encoding="utf-8") as f:
+            json.dump(issue_details, f, indent=4, ensure_ascii=False)
 
 
 
@@ -167,4 +244,3 @@ if __name__ == "__main__":
     scraper = gitPRRetriever(token)
     state = prState(owner="Mintplex-Labs", repo="anything-llm", pr_number=1)
     scraper.run(state)
-
