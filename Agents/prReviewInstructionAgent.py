@@ -2,11 +2,12 @@ import os
 
 import json
 
+from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from templates.prompt import build_review_instruction_generation_prompt
 from templates.state import ReviewInstruction, prState
 
-
+load_dotenv()
 class prReviewInstructionAgent:
     def __init__(self, model: str = "gemini-2.5-flash", api_key: str | None = None):
         self.model = ChatGoogleGenerativeAI(
@@ -36,6 +37,7 @@ class prReviewInstructionAgent:
         review_instruct = self.model.invoke(prompt)
 
         state.review_instruct = review_instruct
+        self.save_review_instruction(folder_path, review_instruct)
         return state.model_dump()
 
     def load_pr_data(self, folder_path: str) -> dict:
@@ -73,13 +75,18 @@ class prReviewInstructionAgent:
             issue_info=json.dumps(data_bundle.get("issue", {}), indent=2),
         )
 
+    def save_review_instruction(self, folder_path: str, review_instruct: ReviewInstruction) -> None:
+        output_path = os.path.join(folder_path, "review_instruction.json")
+        with open(output_path, "w", encoding="utf-8") as file:
+            json.dump(review_instruct.model_dump(), file, indent=4, ensure_ascii=False)
+
     
 # print(os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), os.path.pardir, os.path.pardir)))
 if __name__ == "__main__":
     
     state = prState(owner="Mintplex-Labs", repo="anything-llm", pr_number=5131)
-    
-    agent = prReviewInstructionAgent(api_key="")
+    api_key = os.getenv("GEMINI_API_KEY")
+    agent = prReviewInstructionAgent(api_key=api_key)
     result = agent.run(state)
     print(state.review_instruct)
     print("Done generating review instructions.")

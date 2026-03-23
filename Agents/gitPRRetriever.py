@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+
 from templates.state import prState
 from github import Github, PullRequest, Repository
 from github import Auth
@@ -237,6 +239,7 @@ Validation Rules:
 
 
 if __name__ == "__main__":
+    load_dotenv()
     token = os.getenv("GITHUB_TOKEN")
     if not token:
         raise ValueError("Set GITHUB_TOKEN in your environment before running this script.")

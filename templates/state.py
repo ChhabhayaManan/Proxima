@@ -26,10 +26,106 @@ class ReviewInstruction(BaseModel):
         description="Detailed, actionable list of code modifications required.",
     )
 
+class PseudoSolutionFile(BaseModel):
+    file_path: str = Field(
+        ...,
+        description="Repository-relative file path that should be modified. " \
+        "",
+    )
+    solution_summary: str = Field(
+        ...,
+        description="Concise description of the intended implementation in this file.",
+    )
+    pseudo_code: str = Field(
+        ...,
+        description="Structured pseudo-code or patch-like description of the changes."
+    )
+
+class PseudoSolution(BaseModel):
+    summary: str = Field(
+        ...,
+        description="High-level summary of the intended implementation.",
+    )
+    files: list[PseudoSolutionFile] = Field(
+        default_factory=list,
+        description="Per-file pseudo solution plan.",
+    )
+
+class ReviewComment(BaseModel):
+    file_path: str = Field(
+        ...,
+        description="Repository-relative file path the review comment refers to.",
+    )
+    line_reference: str | None = Field(
+        default=None,
+        description="Approximate line, block, or symbol reference if available.",
+    )
+    severity: str = Field(
+        ...,
+        description="Severity of the review comment: low, medium, or high.",
+    )
+    category: str = Field(
+        ...,
+        description="Category of the review comment such as correctness, UX, maintainability, error_handling, or consistency.",
+    )
+    comment: str = Field(
+        ...,
+        description="Concrete pull request review comment written in reviewer style.",
+    )
+    suggestion: str | None = Field(
+        default=None,
+        description="Optional fix suggestion or requested change.",
+    )
+
+
+class GeneratedPRReview(BaseModel):
+    summary: str = Field(
+        ...,
+        description="Short overall summary of the generated PR review.",
+    )
+    comments: list[ReviewComment] = Field(
+        default_factory=list,
+        description="List of concrete PR review comments.",
+    )
+
+class ReviewChecklistItem(BaseModel):
+    file_path: str = Field(
+        ...,
+        description="Repository-relative file path associated with this checklist item.",
+    )
+    target: str = Field(
+        ...,
+        description="Exact symbol, UI element, logic branch, string, or code region to verify.",
+    )
+    verification_point: str = Field(
+        ...,
+        description="Concrete thing a reviewer should check in the implementation.",
+
+    )
+    expected_outcome: str = Field(
+        ...,
+        description="Expected behavior or code outcome if the implementation is correct.",
+    )
+    severity: str = Field(
+        ...,
+        description="Importance of the checklist item, e.g. low, medium, high.",
+    )
+
+class ReviewChecklist(BaseModel):
+    summary: str = Field(
+        ...,
+        description="High-level summary of what the review checklist covers.",
+    )
+    items: list[ReviewChecklistItem] = Field(
+        default_factory=list,
+        description="Concrete checklist items used to evaluate PR review quality.",
+    )
 
 class prState(BaseModel):
     owner: str
     repo: str
     pr_number: int
     review_instruct: ReviewInstruction | None = None
-    
+    pseudo_solution: PseudoSolution | None = None
+    generated_review: GeneratedPRReview | None = None
+    checklist: ReviewChecklist | None = None
