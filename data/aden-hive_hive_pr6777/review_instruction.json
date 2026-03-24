@@ -1,0 +1,35 @@
+{
+    "problem_definition": "The `scripts/setup_worker_model.ps1` script lacks support for MiniMax and Antigravity model providers, causing inconsistency with the bash setup script. Support needs to be added for credential detection, menu selection, interactive setup, and configuration generation for these providers.",
+    "code_editing_requirement": [
+        {
+            "modification_target": "scripts/setup_worker_model.ps1 (Credential Detection)",
+            "modification_logic": "Initialize `$MinimaxCredDetected` and `$AntigravityCredDetected` variables. Detect MiniMax credentials by checking the `MINIMAX_API_KEY` environment variable. Detect Antigravity credentials by checking for the existence of the SQLite state DB at `$env:APPDATA\\Antigravity\\User\\globalStorage\\state.vscdb` and the OAuth accounts file at `$env:USERPROFILE\\.hive\\antigravity-accounts.json`.",
+            "input_output_requirement": null
+        },
+        {
+            "modification_target": "scripts/setup_worker_model.ps1 (Previous Configuration Parsing)",
+            "modification_logic": "Update the logic that parses `$prevLlm` to identify existing configurations for the new providers. Set `$PrevSubMode` to `antigravity` if `use_antigravity_subscription` is true. Set `$PrevSubMode` to `minimax_code` if the provider is `minimax` or if the `api_base` contains `api.minimax.io`.",
+            "input_output_requirement": null
+        },
+        {
+            "modification_target": "scripts/setup_worker_model.ps1 (Menu Indexing and UI)",
+            "modification_logic": "Reorganize the provider menu: Insert 'MiniMax Coding Key' as option 4 and 'Antigravity Subscription' as option 7. Re-index 'Kimi Code' to 5 and 'Hive LLM' to 6. Update the API key providers loop to start numbering from 8 and update the `$SkipChoice` calculation to `8 + $ProviderMenuEnvVars.Count`. Update the `switch` blocks for `$DefaultChoice` to reflect these new indices.",
+            "input_output_requirement": "Ensure the UI correctly displays '(credential detected)' in green for the new providers when applicable."
+        },
+        {
+            "modification_target": "scripts/setup_worker_model.ps1 (Selection Switch)",
+            "modification_logic": "Add case `4` for MiniMax (set model `MiniMax-M2.5`, context `900000`, API base `https://api.minimax.io/v1`). Add case `7` for Antigravity; if credentials are not detected, execute `core\\antigravity_auth.py` via `uv run` to perform OAuth flow, then set model `gemini-3-flash` and context `1000000`. Update existing cases 5 and 6 and the API provider range (now `8-13`) to match the new menu indices.",
+            "input_output_requirement": "The Antigravity setup must include a warning about potential account suspension risks."
+        },
+        {
+            "modification_target": "scripts/setup_worker_model.ps1 (MiniMax Key Verification)",
+            "modification_logic": "Implement a `while` loop for the `minimax_code` subscription mode that prompts the user for a `MINIMAX_API_KEY`. Save the key as a User environment variable and verify it by calling `scripts/check_llm_key.py` with the `minimax` provider argument.",
+            "input_output_requirement": "If verification fails, clear the environment variable and prompt the user to retry."
+        },
+        {
+            "modification_target": "scripts/setup_worker_model.ps1 (Final Configuration Generation)",
+            "modification_logic": "Update the `$workerLlm` object population logic. For `antigravity`, set `use_antigravity_subscription` to true and include `antigravity_client_secret` and `antigravity_client_id` if they exist in environment variables. For `minimax_code`, set the `api_base` to `https://api.minimax.io/v1` and assign the `api_key_env_var`.",
+            "input_output_requirement": "The resulting configuration must be compatible with the expected schema for the worker LLM settings."
+        }
+    ]
+}
