@@ -1,118 +1,162 @@
-from dotenv import load_dotenv
-
-from templates.state import prState
-from github import Github, PullRequest, Repository
-from github import Auth
 import json
 import os
 import re
+
+from dotenv import load_dotenv
+from github import Auth, Github
+from github.GithubException import GithubException, UnknownObjectException
+
+from templates.state import prState
+
+
+load_dotenv()
 
 
 class gitPRRetriever:
     def __init__(self, token: str):
         if not token:
             raise ValueError("GitHub token must be provided.")
+
         auth = Auth.Token(token)
         self.g = Github(auth=auth)
 
         if not self.g.get_user().login:
             raise ValueError("Invalid GitHub token provided.")
-        
-        
-        pass
 
-    def run(self, state: prState):
-        owner = state.owner
-        repo_name = state.repo
-        repo = None
+    def run(self, state: prState) -> dict:
+        repo = self.g.get_repo(f"{state.owner}/{state.repo}")
+        selected_pr = self.select_pr(repo)
+
+        print(
+            f"Selected PR: {selected_pr.number} {selected_pr.title}, changed files: {selected_pr.changed_files}"
+        )
+
+        data, pr_details, issue_details = self.collect_pr_artifacts(repo, selected_pr)
+        self.store_data(data, state.owner, repo.name, selected_pr.number, pr_details, issue_details)
+
+        state.pr_number = selected_pr.number
+        return state.model_dump()
+
+    def select_pr(self, repo):
+        candidate_prs = self.list_candidate_prs(repo)
+        if not candidate_prs:
+            print("No recent closed PRs matched the default filter. You can still enter any closed PR number.")
+
+        while True:
+            input_pr_number = input("Enter the PR number that you want to review: ").strip()
+            if not input_pr_number.isdigit():
+                print("Please enter a numeric PR number.")
+                continue
+
+            try:
+                pr = repo.get_pull(int(input_pr_number))
+            except UnknownObjectException:
+                print("That PR number does not exist in this repository. Try again.")
+                continue
+
+            if pr.state != "closed":
+                print("Please choose a closed PR so the workflow can compare the base and merged changes.")
+                continue
+
+            return pr
+
+    def list_candidate_prs(self, repo, max_candidates: int = 10):
+        print(f"Repository: {repo.full_name}")
+        print("=" * 100)
+        print("Recent closed PRs with fewer than 5 changed files:")
+        print("PR number : title")
+
+        candidate_prs = []
+        for pr in repo.get_pulls(state="closed", sort="updated", direction="desc"):
+            if pr.changed_files >= 5:
+                continue
+
+            candidate_prs.append(pr)
+            print(
+                f"PR {pr.number}: {pr.title} , additions: {pr.additions} , deletions: {pr.deletions}, "
+                f"changed files: {pr.changed_files} , state: {pr.state}"
+            )
+
+            if len(candidate_prs) >= max_candidates:
+                break
+
+        print("=" * 100)
+        return candidate_prs
+
+    def collect_pr_artifacts(self, repo, pr):
+        head_ref = pr.head.sha
+        base_ref = pr.base.sha
+        comparison = repo.compare(base_ref, head_ref)
+        patches_by_filename = {
+            compared_file.filename: compared_file.patch or ""
+            for compared_file in comparison.files
+        }
+
         data = {}
-        pr_details = {}
-        issue_details = {"related_issue_numbers": [], "issues": []}
-        pr_number = None
-
-        try:
-            repo = self.g.get_repo(f"{owner}/{repo_name}")
-            print("Owner ID: ", self.g.get_user(f"{owner}").login)
-            print(repo.name)
-            prList = repo.get_pulls(state='closed', sort='updated', direction='desc')
-            print('='*100)
-            print("Latest closed PRs with less than 5 changed files: ")
-            print("PR number : title")
-            cnt = 0
-            for pr in prList:
-                if cnt >= 5:
-                    break
-                if(pr.changed_files < 5): # about validation of pr, we can add some rules here based on the limitations of our project.
-                    cnt += 1
-                    print(f"PR {pr.number}: {pr.title} , additions: {pr.additions} , deletions: {pr.deletions}, changed files: {pr.changed_files} , state: {pr.state}")
-            print('='*100)
-
-            input_pr_number = input(f"Enter the PR number that you want to review: ")
-            pr_number = int(input_pr_number)
-            # pr_number = 5007
-            pr = repo.get_pull(pr_number)
-
-            print(f"Selected PR : {pr_number} {pr.title}, changed files: {pr.changed_files}")
-
-            head_ref = pr.head.sha
-            base_ref = pr.base.sha
-            files = pr.get_files()
-            for ind, file in enumerate(files):
-                print(f"File: {file.filename}, additions: {file.additions}, deletions: {file.deletions}")
-                base_content = repo.get_contents(file.filename, ref=base_ref).decoded_content.decode("utf-8").strip()
-                head_content = repo.get_contents(file.filename, ref=head_ref).decoded_content.decode("utf-8").strip()
-
-                changed_lines = repo.compare(base_ref, head_ref).files[ind].patch
-
-                data[file.filename] = {
-                    "base_content": base_content,
-                    "head_content": head_content,
-                    "changed_lines": changed_lines
-                }
-
-            issue_comments = []
-            for comment in pr.get_issue_comments():
-                issue_comments.append(
-                    {
-                        "user": comment.user.login if comment.user else None,
-                        "body": comment.body or "",
-                        "created_at": comment.created_at.isoformat() if comment.created_at else None,
-                        "updated_at": comment.updated_at.isoformat() if comment.updated_at else None,
-                    }
-                )
-
-            review_comments = []
-            for comment in pr.get_review_comments():
-                review_comments.append(
-                    {
-                        "user": comment.user.login if comment.user else None,
-                        "body": comment.body or "",
-                        "path": comment.path,
-                        "line": comment.line,
-                        "created_at": comment.created_at.isoformat() if comment.created_at else None,
-                        "updated_at": comment.updated_at.isoformat() if comment.updated_at else None,
-                    }
-                )
-
-            pr_details = {
-                "pr_number": pr.number,
-                "title": pr.title or "",
-                "description": pr.body or "",
-                "comments": {
-                    "issue_comments": issue_comments,
-                    "review_comments": review_comments,
-                },
+        for file in pr.get_files():
+            print(
+                f"File: {file.filename}, additions: {file.additions}, deletions: {file.deletions}"
+            )
+            data[file.filename] = {
+                "base_content": self.get_file_content(repo, file.filename, base_ref),
+                "head_content": self.get_file_content(repo, file.filename, head_ref),
+                "changed_lines": patches_by_filename.get(file.filename, ""),
             }
-            issue_details = self.get_related_issue_details(repo, pr, pr_details)
 
-        except Exception as e:
-            print(f"Error fetching PRs for {owner}/{repo_name}: {e}")
+        issue_comments = []
+        for comment in pr.get_issue_comments():
+            issue_comments.append(
+                {
+                    "user": comment.user.login if comment.user else None,
+                    "body": comment.body or "",
+                    "created_at": comment.created_at.isoformat() if comment.created_at else None,
+                    "updated_at": comment.updated_at.isoformat() if comment.updated_at else None,
+                }
+            )
+
+        review_comments = []
+        for comment in pr.get_review_comments():
+            review_comments.append(
+                {
+                    "user": comment.user.login if comment.user else None,
+                    "body": comment.body or "",
+                    "path": comment.path,
+                    "line": comment.line,
+                    "created_at": comment.created_at.isoformat() if comment.created_at else None,
+                    "updated_at": comment.updated_at.isoformat() if comment.updated_at else None,
+                }
+            )
+
+        pr_details = {
+            "pr_number": pr.number,
+            "title": pr.title or "",
+            "description": pr.body or "",
+            "comments": {
+                "issue_comments": issue_comments,
+                "review_comments": review_comments,
+            },
+        }
+        issue_details = self.get_related_issue_details(repo, pr, pr_details)
+
+        return data, pr_details, issue_details
+
+    def get_file_content(self, repo, filename: str, ref: str) -> str:
+        try:
+            content = repo.get_contents(filename, ref=ref)
+        except UnknownObjectException:
+            return ""
+        except GithubException as exc:
+            print(f"Unable to fetch {filename} at {ref}: {exc}")
+            return ""
+
+        if isinstance(content, list):
+            return ""
 
         try:
-            if repo and pr_number is not None:
-                self.storedata(data, owner, repo.name, pr_number, pr_details, issue_details)
-        except Exception as e:
-            print(f"Error storing data for {owner}/{repo_name}: {e}")
+            return content.decoded_content.decode("utf-8").strip()
+        except UnicodeDecodeError:
+            print(f"Skipping non-text content for {filename} at {ref}.")
+            return ""
 
     def get_related_issue_details(self, repo, pr, pr_details):
         text_blobs = [
@@ -128,7 +172,9 @@ class gitPRRetriever:
         for comment in review_comments:
             text_blobs.append(comment.get("body", ""))
 
-        linked_numbers = self.extract_issue_numbers("\n".join(text_blobs), repo.owner.login, repo.name)
+        linked_numbers = self.extract_issue_numbers(
+            "\n".join(text_blobs), repo.owner.login, repo.name
+        )
 
         issue_items = []
         for number in sorted(linked_numbers):
@@ -138,7 +184,6 @@ class gitPRRetriever:
             try:
                 issue = repo.get_issue(number)
 
-                # Skip linked pull requests; keep only issue artifacts.
                 if issue.pull_request is not None:
                     continue
 
@@ -158,13 +203,11 @@ class gitPRRetriever:
                         "html_url": issue.html_url,
                     }
                 )
-            except Exception as e:
-                print(f"Unable to fetch related issue #{number}: {e}")
+            except GithubException as exc:
+                print(f"Unable to fetch related issue #{number}: {exc}")
 
         return {
-            "related_issue_numbers": sorted(
-                [item["number"] for item in issue_items]
-            ),
+            "related_issue_numbers": sorted([item["number"] for item in issue_items]),
             "issues": issue_items,
         }
 
@@ -185,7 +228,7 @@ class gitPRRetriever:
 
         return issue_numbers
 
-    def storedata(self, data, owner, repo_name, pr_number, pr_details, issue_details):
+    def store_data(self, data, owner, repo_name, pr_number, pr_details, issue_details):
         changed_code = {}
         base_code = {}
         merged_code = {}
@@ -195,51 +238,30 @@ class gitPRRetriever:
             base_code[key] = value["base_content"]
             merged_code[key] = value["head_content"]
 
-        folder_path = f"data/{owner}_{repo_name}_pr{pr_number}"
+        folder_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "data",
+            f"{owner}_{repo_name}_pr{pr_number}",
+        )
         os.makedirs(folder_path, exist_ok=True)
 
-        
-        with open(f"{folder_path}/base_code.json", "w", encoding="utf-8") as f:
+        with open(os.path.join(folder_path, "base_code.json"), "w", encoding="utf-8") as f:
             json.dump(base_code, f, indent=4)
 
-        with open(f"{folder_path}/merged_code.json", "w", encoding="utf-8") as f:
+        with open(os.path.join(folder_path, "merged_code.json"), "w", encoding="utf-8") as f:
             json.dump(merged_code, f, indent=4)
 
-        with open(f"{folder_path}/changed_code.json", "w", encoding="utf-8") as f:
+        with open(os.path.join(folder_path, "changed_code.json"), "w", encoding="utf-8") as f:
             json.dump(changed_code, f, indent=4)
 
-        with open(f"{folder_path}/pr_details.json", "w", encoding="utf-8") as f:
+        with open(os.path.join(folder_path, "pr_details.json"), "w", encoding="utf-8") as f:
             json.dump(pr_details, f, indent=4, ensure_ascii=False)
 
-        with open(f"{folder_path}/issue.json", "w", encoding="utf-8") as f:
+        with open(os.path.join(folder_path, "issue.json"), "w", encoding="utf-8") as f:
             json.dump(issue_details, f, indent=4, ensure_ascii=False)
 
 
-
-    def validate(pr):
-        if pr.state != "closed":
-            return False
-        if pr.changed_files >= 5:
-            return False
-        
-        return True
-        
-    
-
-        
-
-"""
-Validation Rules:
-1. PR must be closed (state="closed")
-2. PR addition and deletion LOC < 1000 (doesn't matter now)
-3. files that are changed <5
-"""
-
-
-
-
 if __name__ == "__main__":
-    load_dotenv()
     token = os.getenv("GITHUB_TOKEN")
     if not token:
         raise ValueError("Set GITHUB_TOKEN in your environment before running this script.")

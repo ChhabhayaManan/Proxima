@@ -124,7 +124,7 @@ class ReviewChecklist(BaseModel):
 class prState(BaseModel):
     owner: str
     repo: str
-    pr_number: int
+    pr_number: int | None = None
     review_instruct: ReviewInstruction | None = None
     pseudo_solution: PseudoSolution | None = None
     generated_review: GeneratedPRReview | None = None

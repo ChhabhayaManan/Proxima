@@ -45,9 +45,7 @@ Output JSON schema:
 """
 
 def build_pseudo_solution_generation_prompt(
-    pr_metadata: str,
     base_code: str,
-    changed_code: str,
     review_instruct: str,
 ) -> str:
     return f"""You are generating an LLM pseudo solution for a pull request task.
@@ -56,7 +54,7 @@ Goal:
 Produce a plausible generated implementation candidate, not a polished final solution.
 
 Task:
-1. Read the PR metadata, original code, changed diff, and review instruction.
+1. Read the original code and review instruction.
 2. Infer what code changes should be attempted.
 3. Produce a structured pseudo solution that describes the intended implementation at a moderate level of detail.
 
@@ -78,14 +76,8 @@ Output requirements:
 - `pseudo_code` should describe the implementation plan in concise steps, not full final code.
 
 Input:
-PR Metadata:
-{pr_metadata.strip()}
-
 Original Code:
 {base_code.strip()}
-
-Changed Code Diff:
-{changed_code.strip()}
 
 Review Instruction:
 {review_instruct.strip()}

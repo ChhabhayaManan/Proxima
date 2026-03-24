@@ -1,0 +1,53 @@
+{
+    "summary": "The generated implementation focuses primarily on MiniMax and Antigravity providers, but it omits several other critical subscription-based providers and logic present in the reference implementation, such as ZAI, Kimi, and Hive LLM. It also lacks the specialized model verification logic for OpenRouter and specific command-line arguments for authentication tools.",
+    "comments": [
+        {
+            "file_path": "scripts/setup_worker_model.ps1",
+            "line_reference": "pseudo_code step 1",
+            "severity": "medium",
+            "category": "completeness",
+            "comment": "The credential detection logic is incomplete. The reference implementation also detects credentials for Claude (~/.claude/.credentials.json), Codex (~/.codex/auth.json), ZAI (ZAI_API_KEY), Kimi (~/.kimi/config.toml), and Hive (HIVE_API_KEY).",
+            "suggestion": "Expand credential detection to include ZAI_API_KEY, HIVE_API_KEY, and the config paths for Claude, Codex, and Kimi."
+        },
+        {
+            "file_path": "scripts/setup_worker_model.ps1",
+            "line_reference": "pseudo_code step 2",
+            "severity": "medium",
+            "category": "correctness",
+            "comment": "The configuration parsing logic for previous settings is missing several sub-modes. The reference implementation handles 'zai_code', 'kimi_code', and 'hive_llm' in addition to 'antigravity' and 'minimax_code'.",
+            "suggestion": "Update the parsing logic to recognize use_kimi_code_subscription, use_zai_code_subscription, and hive_llm provider types."
+        },
+        {
+            "file_path": "scripts/setup_worker_model.ps1",
+            "line_reference": "pseudo_code step 7",
+            "severity": "high",
+            "category": "correctness",
+            "comment": "The Antigravity authentication call is underspecified. The reference implementation requires specific arguments ('auth account add') to trigger the OAuth flow correctly.",
+            "suggestion": "Change the command to: & $UvCmd run python (Join-Path $ProjectDir \"core\\antigravity_auth.py\") auth account add"
+        },
+        {
+            "file_path": "scripts/setup_worker_model.ps1",
+            "line_reference": "pseudo_code step 8",
+            "severity": "medium",
+            "category": "completeness",
+            "comment": "The final configuration generation is missing the logic for ZAI, Kimi, and Hive LLM providers. These require specific 'api_base' settings (e.g., api.z.ai, api.kimi.com/coding) and 'api_key_env_var' mappings.",
+            "suggestion": "Add switch cases for zai_code, kimi_code, and hive_llm to set the appropriate api_base and environment variable keys in the $workerLlm object."
+        },
+        {
+            "file_path": "scripts/setup_worker_model.ps1",
+            "line_reference": "Get-ModelSelection",
+            "severity": "medium",
+            "category": "maintainability",
+            "comment": "The generated version omits the complex model selection and verification logic for OpenRouter. The reference implementation includes a specific normalization and verification step using 'scripts/check_llm_key.py' specifically for OpenRouter model IDs.",
+            "suggestion": "Implement the Normalize-OpenRouterModelId helper and the verification block within Get-ModelSelection to ensure OpenRouter IDs are valid before saving."
+        },
+        {
+            "file_path": "scripts/setup_worker_model.ps1",
+            "line_reference": "pseudo_code step 6",
+            "severity": "low",
+            "category": "UX",
+            "comment": "While MiniMax is mentioned, the reference implementation also includes dedicated interactive validation loops for ZAI, Kimi, and Hive keys, including health checks via 'check_llm_key.py' and retry logic.",
+            "suggestion": "Ensure all subscription-based providers that use API keys (ZAI, MiniMax, Kimi, Hive) have the interactive verification loop implemented."
+        }
+    ]
+}
