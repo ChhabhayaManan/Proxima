@@ -3,110 +3,84 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-from langgraph.graph import END, START, StateGraph
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from Agents import (
-    checklistGenerationAgent,
-    gitPRRetriever,
-    llmGeneratedPRReviewAgent,
-    prReviewGenerationAgent,
-    prReviewInstructionAgent,
-    pseudoSolutionAgent,
-    scoreGenerationAgent,
-)
+from src.DataGenerationWorkflow import DataGenerationWorkflow
+from src.ModelEvaluationWorkflow import ModelEvaluationWorkflow
 from templates.state import prState
-from utils.models import DEFAULT_MODEL_NAME, configure_google_model
+from utils.models import (
+    DEFAULT_GROQ_MODEL_NAME,
+    DEFAULT_MODEL_NAME,
+    configure_google_model,
+    configure_groq_model,
+)
 
 
 load_dotenv()
 
 
-class Workflow:
+class _SequentialWorkflowGraph:
     def __init__(
         self,
-        github_token: str,
-        api_key: str | None,
-        model_name: str = DEFAULT_MODEL_NAME,
+        data_generation_workflow: DataGenerationWorkflow,
+        model_evaluation_workflow: ModelEvaluationWorkflow,
     ):
-        resolved_github_token = github_token.strip() if github_token else os.getenv("GITHUB_TOKEN")
-        if not resolved_github_token:
-            raise ValueError("A GitHub token is required. Set GITHUB_TOKEN or provide it when starting the workflow.")
+        self.data_generation_workflow = data_generation_workflow
+        self.model_evaluation_workflow = model_evaluation_workflow
 
-        configure_google_model(api_key=api_key, model_name=model_name)
+    def invoke(self, state: prState | dict) -> dict:
+        data_generation_result = self.data_generation_workflow.graph.invoke(state)
+        evaluation_input = prState.model_validate(data_generation_result)
+        return self.model_evaluation_workflow.graph.invoke(evaluation_input)
 
-        self.pr_retriever = gitPRRetriever(resolved_github_token)
-        self.review_instruction_agent = prReviewInstructionAgent()
-        self.pseudo_solution_agent = pseudoSolutionAgent()
-        self.review_generation_agent = prReviewGenerationAgent()
-        self.checklist_generation_agent = checklistGenerationAgent()
-        self.llm_generated_pr_review_agent = llmGeneratedPRReviewAgent()
-        self.score_generation_agent = scoreGenerationAgent()
 
-        proxima_workflow = StateGraph(prState)
-        proxima_workflow.add_node("retrieve_pr", self.retrieve_pr_node)
-        proxima_workflow.add_node("generate_review_instruction", self.generate_instruction_node)
-        proxima_workflow.add_node("generate_pseudo_solution", self.generate_pseudo_solution_node)
-        proxima_workflow.add_node("generate_pr_review", self.generate_review_node)
-        proxima_workflow.add_node("generate_checklist", self.generate_checklist_node)
-        proxima_workflow.add_node("generate_llm_pr_review", self.generate_llm_pr_review_node)
-        proxima_workflow.add_node("generate_score", self.generate_score_node)
+class Workflow:
+    def __init__(self):
+        self.data_generation_workflow = DataGenerationWorkflow()
+        self.model_evaluation_workflow = ModelEvaluationWorkflow()
+        self.graph = _SequentialWorkflowGraph(
+            data_generation_workflow=self.data_generation_workflow,
+            model_evaluation_workflow=self.model_evaluation_workflow,
+        )
 
-        proxima_workflow.add_edge(START, "retrieve_pr")
-        proxima_workflow.add_edge("retrieve_pr", "generate_review_instruction")
-        proxima_workflow.add_edge("generate_review_instruction", "generate_pseudo_solution")
-        proxima_workflow.add_edge("generate_pseudo_solution", "generate_pr_review")
-        proxima_workflow.add_edge("generate_pr_review", "generate_checklist")
-        proxima_workflow.add_edge("generate_checklist", "generate_llm_pr_review")
-        proxima_workflow.add_edge("generate_llm_pr_review", "generate_score")
-        proxima_workflow.add_edge("generate_score", END)
 
-        self.graph = proxima_workflow.compile()
+def initialize_workflow_runtime() -> None:
+    github_token = os.getenv("GITHUB_TOKEN") or input("Enter GitHub token: ").strip()
+    if not github_token:
+        raise ValueError("A GitHub token is required. Set GITHUB_TOKEN or enter it when prompted.")
 
-    def retrieve_pr_node(self, state: prState):
-        print("--- Node 1: PR Retriever ---")
-        return self.pr_retriever.run(state)
+    google_api_key = (
+        os.getenv("GEMINI_API_KEY")
+        or os.getenv("GOOGLE_API_KEY")
+        or input("Enter Gemini/Google API key: ").strip()
+    )
+    if not google_api_key:
+        raise ValueError(
+            "A Gemini/Google API key is required. Set GEMINI_API_KEY / GOOGLE_API_KEY or enter it when prompted."
+        )
 
-    def generate_instruction_node(self, state: prState):
-        print("--- Node 2: Review Instruction Generation ---")
-        return self.review_instruction_agent.run(state)
+    groq_api_key = os.getenv("GROQ_API_KEY") or input("Enter Groq API key: ").strip()
+    if not groq_api_key:
+        raise ValueError("A Groq API key is required. Set GROQ_API_KEY or enter it when prompted.")
 
-    def generate_pseudo_solution_node(self, state: prState):
-        print("--- Node 3: Pseudo Solution Generation ---")
-        return self.pseudo_solution_agent.run(state)
+    google_model_name = input(
+        f"Enter Google model name (press Enter for {DEFAULT_MODEL_NAME}): "
+    ).strip() or DEFAULT_MODEL_NAME
+    groq_model_name = input(
+        f"Enter Groq model name (press Enter for {DEFAULT_GROQ_MODEL_NAME}): "
+    ).strip() or DEFAULT_GROQ_MODEL_NAME
 
-    def generate_review_node(self, state: prState):
-        print("--- Node 4: Review Generation ---")
-        return self.review_generation_agent.run(state)
-
-    def generate_checklist_node(self, state: prState):
-        print("--- Node 5: Checklist Generation ---")
-        return self.checklist_generation_agent.run(state)
-
-    def generate_llm_pr_review_node(self, state: prState):
-        print("--- Node 6: LLM-Generated PR Review ---")
-        return self.llm_generated_pr_review_agent.run(state)
-
-    def generate_score_node(self, state: prState):
-        print("--- Node 7: Score Generation ---")
-        return self.score_generation_agent.run(state)
+    os.environ["GITHUB_TOKEN"] = github_token
+    configure_google_model(api_key=google_api_key, model_name=google_model_name)
+    configure_groq_model(api_key=groq_api_key, model_name=groq_model_name)
 
 
 if __name__ == "__main__":
-    github_token = os.getenv("GITHUB_TOKEN") or input("Enter GitHub token: ").strip()
-    api_key = input("Enter Gemini/Google API key (leave blank to use env): ").strip() or None
-    model_name = input(
-        f"Enter model name (press Enter for {DEFAULT_MODEL_NAME}): "
-    ).strip() or DEFAULT_MODEL_NAME
-
-    workflow = Workflow(
-        github_token=github_token,
-        api_key=api_key,
-        model_name=model_name,
-    )
+    initialize_workflow_runtime()
+    workflow = Workflow()
 
     owner = input("Enter repository owner: ").strip()
     repo = input("Enter repository name: ").strip()
@@ -123,8 +97,6 @@ if __name__ == "__main__":
         print("Review instructions generated successfully.")
     if final_state.get("pseudo_solution"):
         print("Pseudo solution generated successfully.")
-    if final_state.get("generated_review"):
-        print("PR review generated successfully.")
     if final_state.get("checklist"):
         print("Checklist generated successfully.")
     if final_state.get("llm_generated_pr_review"):

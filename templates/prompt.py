@@ -1,4 +1,5 @@
 import json
+
 from .state import (
     ReviewInstruction,
     PseudoSolution,
@@ -90,100 +91,35 @@ Output JSON schema:
 {json.dumps(PseudoSolution.model_json_schema(), indent=2)}
 """
 
-
-
-
-def build_pr_review_generation_prompt(
+def build_checklist_generation_prompt(
     pseudo_solution: str,
     merged_code: str,
+    changed_code: str,
 ) -> str:
-    return f"""You are reviewing a generated implementation against a known correct reference implementation.
-
-You are presented with two versions of code:
-
-Generated Version:
-A pseudo or automatically generated implementation.
-
-Reference Version:
-A known correct or ground-truth implementation.
-
-Your task:
-Compare the Generated Version against the Reference Version and produce pull-request-style review comments on the Generated Version.
-
-Primary objective:
-Identify meaningful review-worthy differences between the Generated Version and the Reference Version, including:
-- missing logic
-- incorrect assumptions
-- incomplete implementation
-- missing conditions or state handling
-- incorrect strings, labels, or UI behavior
-- missing imports or required supporting code
-- maintainability or clarity problems caused by the generated version being less precise than the reference version
-
-Important review behavior:
-- Do not restrict comments only to obvious bugs.
-- If the Generated Version is broadly correct but omits important implementation detail, leave a review comment about that omission.
-- If the Generated Version is mostly aligned but underspecified, leave comments on the missing specificity.
-- Prefer several high-signal comments over a single vague summary.
-- A strong review should capture important implementation deltas and reviewer verification points, not just fatal errors.
-- Infer the programming language from the code and evaluate the implementation using language-appropriate expectations for correctness, style, resource handling, typing, concurrency, error handling, and API usage.
-
-Guidelines:
-- Frame feedback as PR comments directed at the Generated Version.
-- Be specific and objective.
-- Use exact file paths, labels, strings, identifiers, UI states, conditions, and patterns when possible.
-- Reference the Reference Version only to explain why the Generated Version is incomplete, less correct, or less robust.
-- Do not explain the full logic of the Reference Version.
-- If both versions are functionally equivalent, you may still comment on meaningful trade-offs or missing specificity if they would matter in review.
-- Only return "No comment." when there are truly no meaningful differences worth flagging.
-
-Comment quality rules:
-- Consistency: The review MUST accurately describe all functional changes and address all major code modifications.
-- Mapping: Each review comment MUST be mapped to the correct line(s) or section(s) of code precisely.
-- Actionability: Suggestions or critiques MUST be actionable given the current code. Focus on practical helpfulness that would help a developer improve or merge the PR efficiently.
-- Each comment should correspond to one concrete issue or one tightly related set of issues.
-- Avoid generic praise or vague comments like "consider improving clarity".
-- Prefer implementation-grounded comments such as missing conditional behavior, missing label changes, missing string changes, missing supporting UI elements, or incomplete handling of state transitions.
-
-Generated Version:
-{pseudo_solution.strip()}
-
-Reference Version:
-{merged_code.strip()}
-
-Severity guidance:
-- high: core functional bug, missing behavior, or incorrect implementation
-- medium: important omission, incomplete logic, regression-sensitive behavior, or major clarity gap
-- low: minor precision, maintainability, or reviewer-facing clarification
-
-Return valid JSON only.
-
-Output JSON schema:
-{json.dumps(GeneratedPRReview.model_json_schema(), indent=2)}
-"""
-
-
-
-
-def build_checklist_generation_prompt(
-    generated_review: str,
-) -> str:
-    return f"""You are generating a structured PR review checklist from PR review comments.
+    return f"""You are generating a structured PR review checklist by comparing a pseudo solution against the merged implementation.
 
 Task:
-Based on the following generated PR review, create a comprehensive and highly detailed checklist that captures all concrete issues, suggestions, and verification points mentioned in the review.
+Compare the pseudo solution with the merged code and create a comprehensive and highly detailed checklist that captures all concrete issues, missing behaviors, implementation gaps, and reviewer verification points revealed by that comparison.
 
 Checklist Requirements:
 - Completeness: Ensure the checklist covers ALL critical aspects that should be reviewed for this PR.
-- Accuracy: Strictly NO irrelevant items. Checklist items MUST align perfectly with the issues actually present in the differences between the Generated Review and reference behavior.
+- Accuracy: Strictly NO irrelevant items. Checklist items MUST align perfectly with the issues actually present in the differences between the pseudo solution and the merged code.
 - Clarity: The wording of checklist items must be crystal clear and unambiguous.
 - Practical Helpfulness: The checklist MUST reflect real-world developer concerns when performing code reviews, focusing on items that add value over a manual review alone.
-- Infer the programming language from the review content and preserve language-specific verification concerns such as exception handling, nullability, typing, state transitions, memory/resource cleanup, API contract adherence, UI behavior, or test expectations.
-- Extract all meaningful review concerns from the PR review.
+- Infer the programming language from the pseudo solution and merged code, and preserve language-specific verification concerns such as exception handling, nullability, typing, state transitions, memory/resource cleanup, API contract adherence, UI behavior, or test expectations.
+- Extract all meaningful review concerns from the differences between the pseudo solution and the merged code.
+- Focus especially on missing logic, incorrect assumptions, incomplete implementation, missing conditions or state handling, incorrect strings or UI behavior, missing imports or support code, and important precision gaps.
 - Break each concern into the smallest actionable verification step possible.
 - Keep checklist items specific and implementation-focused. Avoid vague or generic advice.
-- Do not invent checklist items that are not supported by the PR review.
+- Do not invent checklist items that are not supported by the pseudo solution and merged code.
+- Restrict checklist items to the changed code context only. Use the changed-code diff to determine which files, code regions, and behaviors are actually in scope.
+- Do not create checklist items for untouched code, pre-existing helpers, or surrounding implementation details unless they are directly affected by the changed code.
 - Avoid duplicates and near-duplicate items. Prefer precise, scoring-friendly verification points.
+- The number of checklist items must depend on the size and complexity of the PR:
+  - Small PRs: 3 to 4 checklist items is enough.
+  - Medium PRs: 5 to 7 checklist items.
+  - Larger PRs: at most 8 to 10 checklist items.
+- Even for large PRs, include only the most important checklist items. Prioritize changed behavior, changed logic, and regression-sensitive code paths over secondary polish.
 
 Field requirements:
 - `file_path`: repository-relative file path if available
@@ -197,8 +133,14 @@ Severity guidance:
 - medium: important implementation detail, regression-sensitive logic, or maintainability issue
 - low: secondary clarity, consistency, or polish issue
 
-Generated PR Review:
-{generated_review.strip()}
+Pseudo Solution:
+{pseudo_solution.strip()}
+
+Changed Code Diff:
+{changed_code.strip()}
+
+Merged Code:
+{merged_code.strip()}
 
 Return valid JSON only.
 
@@ -216,22 +158,14 @@ def build_llm_generated_pr_review_prompt(
 
 You are given:
 - The pull request metadata, including title and description
-- The full original version of the modified file(s) before changes
-- The generated code introduced in the pull request
+- The full original version of the modified file(s) (before changes)
+- The generated code (generated code introduced in the PR.)
 
-Your job is to provide precise, objective, and actionable review comments based on the changes introduced in the pull request.
-Use the full original source for understanding context and identifying problems.
+Your job is to provide precise, objective, and actionable review comments based on the changes introduced in the pull request. Use the full original source for understanding context and identifying problems.
 
-Rules:
-- Infer the programming language from the file paths and code, and apply language-appropriate expectations for syntax, semantics, typing, resource handling, async behavior, error handling, and framework conventions.
-- Focus on substantive code-review issues in the generated implementation. Ignore markdown linting, documentation-only polish, cosmetic formatting, lockfiles, and other non-code concerns unless the PR metadata explicitly makes them part of the requested behavior change.
-- Each comment should capture one concrete issue or one tightly related set of issues.
-- Reference exact file paths, identifiers, conditions, strings, behaviors, or code patterns when possible.
-- Use language-appropriate terminology in the review comments.
-- Keep comments actionable and phrased like real PR review feedback.
-- Prefer correctness, robustness, edge cases, API misuse, incomplete behavior, and regression-sensitive logic over stylistic nits.
-- If you find the pull request is 100% correct, return a review with summary `No comment.` and an empty `comments` list.
-- Return valid JSON only.
+Once you have identified issues in the code, return them as a JSON list, enclosed in backticks with JSON syntax highlighting.
+
+If you find the pull request is 100% correct, output: "No comment."
 
 PR metadata:
 {pr_metadata.strip()}

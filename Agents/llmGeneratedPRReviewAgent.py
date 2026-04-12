@@ -1,11 +1,19 @@
 import json
 import os
 
+from dotenv import load_dotenv
 from pydantic import BaseModel
 
 from templates.prompt import build_llm_generated_pr_review_prompt
 from templates.state import GeneratedPRReview, PseudoSolution, prState
-from utils.models import DEFAULT_GROQ_MODEL_NAME, get_structured_groq_model
+from utils.models import (
+    DEFAULT_GROQ_MODEL_NAME,
+    configure_groq_model,
+    get_structured_groq_model,
+)
+
+
+load_dotenv()
 
 
 class llmGeneratedPRReviewAgent:
@@ -18,8 +26,6 @@ class llmGeneratedPRReviewAgent:
     def run(self, state: prState) -> dict:
         if state.pr_number is None:
             raise ValueError("PR number is missing from the workflow state.")
-        if state.pseudo_solution is None:
-            raise ValueError("Pseudo solution must be generated before LLM-generated PR review generation.")
 
         folder_path = os.path.join(
             os.path.dirname(os.path.dirname(__file__)),
@@ -28,6 +34,9 @@ class llmGeneratedPRReviewAgent:
         )
 
         data_bundle = self.load_pr_data(folder_path)
+        self.hydrate_state_from_saved_data(state, data_bundle)
+        if state.pseudo_solution is None:
+            raise ValueError("Pseudo solution must be available before LLM-generated PR review generation.")
 
         prompt = build_llm_generated_pr_review_prompt(
             pr_metadata=json.dumps(data_bundle.get("pr_details", {}), indent=2, ensure_ascii=False),
@@ -35,7 +44,7 @@ class llmGeneratedPRReviewAgent:
             generated_code=json.dumps(self.serialize_value(state.pseudo_solution), indent=2, ensure_ascii=False),
         )
 
-        print("Generating LLM-generated PR review with Groq using PR metadata, original code, and pseudo solution...")
+        print("Generating LLM-generated PR review with Groq using PR metadata, original code, pseudo solution, and merged code...")
         llm_generated_pr_review = self.model.invoke(prompt)
 
         state.llm_generated_pr_review = llm_generated_pr_review
@@ -46,7 +55,7 @@ class llmGeneratedPRReviewAgent:
         required_files = {
             "pr_details": "pr_details.json",
             "base_code": "base_code.json",
-            "pseudo_solution": "pseudo_solution.json",
+            "pseudo_solution": "pseudo_solution.json"
         }
 
         data_bundle = {}
@@ -79,15 +88,21 @@ class llmGeneratedPRReviewAgent:
 
 
 if __name__ == "__main__":
-    state = prState(owner="Mintplex-Labs", repo="anything-llm", pr_number=5131)
-    agent = llmGeneratedPRReviewAgent()
-    folder_path = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)),
-        "data",
-        f"{state.owner}_{state.repo}_pr{state.pr_number}",
-    )
-    saved_data = agent.load_pr_data(folder_path)
-    agent.hydrate_state_from_saved_data(state, saved_data)
+    groq_api_key = os.getenv("GROQ_API_KEY") or input("Enter Groq API key: ").strip()
+    if not groq_api_key:
+        raise ValueError("A Groq API key is required. Set GROQ_API_KEY or enter it when prompted.")
+
+    model_name = input(
+        f"Enter Groq model name (press Enter for {DEFAULT_GROQ_MODEL_NAME}): "
+    ).strip() or DEFAULT_GROQ_MODEL_NAME
+    configure_groq_model(api_key=groq_api_key, model_name=model_name)
+
+    owner = input("Enter repository owner: ").strip()
+    repo = input("Enter repository name: ").strip()
+    pr_number = int(input("Enter PR number: ").strip())
+
+    state = prState(owner=owner, repo=repo, pr_number=pr_number)
+    agent = llmGeneratedPRReviewAgent(model_name=model_name)
     result = agent.run(state)
     print(result)
     print("Done generating LLM-generated PR review.")

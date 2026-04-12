@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -36,7 +37,8 @@ class scoreGenerationAgent:
 
         print("Scoring LLM-generated PR review against checklist...")
         response = self.model.invoke(prompt)
-        matched_items = self.parse_score_response(response.content, total_items, evaluation_mode)
+        response_text = self.extract_response_text(response)
+        matched_items = self.parse_score_response(response_text, total_items, evaluation_mode)
         coverage_score = self.compute_coverage(matched_items, total_items)
 
         score = ChecklistScore(
@@ -75,6 +77,32 @@ class scoreGenerationAgent:
         if isinstance(value, BaseModel):
             return value.model_dump()
         return value
+
+    def extract_response_text(self, response: Any) -> str:
+        content = getattr(response, "content", response)
+        return self.normalize_response_content(content)
+
+    def normalize_response_content(self, content: Any) -> str:
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, (int, float, bool)):
+            return str(content)
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                normalized_item = self.normalize_response_content(item)
+                if normalized_item:
+                    parts.append(normalized_item)
+            return "\n".join(parts)
+        if isinstance(content, dict):
+            for key in ("text", "content", "value"):
+                value = content.get(key)
+                if value is not None:
+                    return self.normalize_response_content(value)
+            return json.dumps(content, ensure_ascii=False)
+        return str(content)
 
     def parse_score_response(self, response_text: str, total_items: int, evaluation_mode: str) -> int:
         match = re.search(r"-?\d+", response_text or "")

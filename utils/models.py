@@ -7,7 +7,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 load_dotenv()
 
-DEFAULT_MODEL_NAME = "gemini-2.5-flash"
+DEFAULT_MODEL_NAME = "gemini-3.1-flash-lite-preview"
 DEFAULT_TEMPERATURE = 0.2
 
 _MODEL_CONFIG: dict[str, Any] = {
@@ -37,7 +37,7 @@ def configure_google_model(
     )
     if not resolved_api_key:
         raise ValueError(
-            "A Gemini/Google API key is required. Provide it in Workflow.py or set GEMINI_API_KEY / GOOGLE_API_KEY."
+            "A Gemini/Google API key is required. Enter it when prompted or set GEMINI_API_KEY / GOOGLE_API_KEY."
         )
 
     _MODEL_CONFIG["api_key"] = resolved_api_key

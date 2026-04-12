@@ -146,7 +146,6 @@ class prState(BaseModel):
     pr_number: int | None = None
     review_instruct: ReviewInstruction | None = None
     pseudo_solution: PseudoSolution | None = None
-    generated_review: GeneratedPRReview | None = None
     checklist: ReviewChecklist | None = None
     llm_generated_pr_review: GeneratedPRReview | None = None
     score: ChecklistScore | None = None
