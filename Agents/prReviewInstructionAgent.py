@@ -38,8 +38,8 @@ class prReviewInstructionAgent:
 
     def load_pr_data(self, folder_path: str) -> dict:
         required_files = {
-            "base_code": "base_code.json",
-            "merged_code": "merged_code.json",
+            # "base_code": "base_code.json",
+            # "merged_code": "merged_code.json",
             "changed_code": "changed_code.json",
             "pr_details": "pr_details.json",
         }
@@ -64,12 +64,12 @@ class prReviewInstructionAgent:
 
         return data_bundle
 
-    def build_prompt(self, data_bundle: dict) -> str:
-        return build_review_instruction_generation_prompt(
-            ps_metadata=json.dumps(data_bundle.get("pr_details", {}), indent=2),
-            gt_code_diff=json.dumps(data_bundle.get("changed_code", {}), indent=2),
-            issue_info=json.dumps(data_bundle.get("issue", {}), indent=2),
-        )
+    # def build_prompt(self, data_bundle: dict) -> str:
+    #     return build_review_instruction_generation_prompt(
+    #         ps_metadata=json.dumps(data_bundle.get("pr_details", {}), indent=2),
+    #         gt_code_diff=json.dumps(data_bundle.get("changed_code", {}), indent=2),
+    #         issue_info=json.dumps(data_bundle.get("issue", {}), indent=2),
+    #     )
 
     def save_review_instruction(self, folder_path: str, review_instruct: ReviewInstruction) -> None:
         output_path = os.path.join(folder_path, "review_instruction.json")

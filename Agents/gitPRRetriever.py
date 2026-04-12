@@ -25,7 +25,10 @@ class gitPRRetriever:
 
     def run(self, state: prState) -> dict:
         repo = self.g.get_repo(f"{state.owner}/{state.repo}")
-        selected_pr = self.select_pr(repo)
+        if state.pr_number is not None and state.pr_number > 0:
+            selected_pr = repo.get_pull(int(state.pr_number))
+        else:
+            selected_pr = self.select_pr(repo)
 
         print(
             f"Selected PR: {selected_pr.number} {selected_pr.title}, changed files: {selected_pr.changed_files}"

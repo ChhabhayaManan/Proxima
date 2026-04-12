@@ -1,13 +1,15 @@
 from .checklistGenerationAgent import checklistGenerationAgent
 from .gitPRRetriever import gitPRRetriever
-from .prReviewGenerationAgent import prReviewGenerationAgent
+from .llmGeneratedPRReviewAgent import llmGeneratedPRReviewAgent
 from .prReviewInstructionAgent import prReviewInstructionAgent
 from .pseudoSolutionAgent import pseudoSolutionAgent
+from .scoreGenerationAgent import scoreGenerationAgent
 
 __all__ = [
     "checklistGenerationAgent",
     "gitPRRetriever",
-    "prReviewGenerationAgent",
+    "llmGeneratedPRReviewAgent",
     "prReviewInstructionAgent",
     "pseudoSolutionAgent",
+    "scoreGenerationAgent",
 ]
