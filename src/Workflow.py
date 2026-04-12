@@ -1,14 +1,22 @@
 import os
+import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 from langgraph.graph import END, START, StateGraph
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from Agents import (
     checklistGenerationAgent,
     gitPRRetriever,
+    llmGeneratedPRReviewAgent,
     prReviewGenerationAgent,
     prReviewInstructionAgent,
     pseudoSolutionAgent,
+    scoreGenerationAgent,
 )
 from templates.state import prState
 from utils.models import DEFAULT_MODEL_NAME, configure_google_model
@@ -35,20 +43,26 @@ class Workflow:
         self.pseudo_solution_agent = pseudoSolutionAgent()
         self.review_generation_agent = prReviewGenerationAgent()
         self.checklist_generation_agent = checklistGenerationAgent()
+        self.llm_generated_pr_review_agent = llmGeneratedPRReviewAgent()
+        self.score_generation_agent = scoreGenerationAgent()
 
         proxima_workflow = StateGraph(prState)
         proxima_workflow.add_node("retrieve_pr", self.retrieve_pr_node)
         proxima_workflow.add_node("generate_review_instruction", self.generate_instruction_node)
         proxima_workflow.add_node("generate_pseudo_solution", self.generate_pseudo_solution_node)
-        proxima_workflow.add_node("generate_review", self.generate_review_node)
+        proxima_workflow.add_node("generate_pr_review", self.generate_review_node)
         proxima_workflow.add_node("generate_checklist", self.generate_checklist_node)
+        proxima_workflow.add_node("generate_llm_pr_review", self.generate_llm_pr_review_node)
+        proxima_workflow.add_node("generate_score", self.generate_score_node)
 
         proxima_workflow.add_edge(START, "retrieve_pr")
         proxima_workflow.add_edge("retrieve_pr", "generate_review_instruction")
         proxima_workflow.add_edge("generate_review_instruction", "generate_pseudo_solution")
-        proxima_workflow.add_edge("generate_pseudo_solution", "generate_review")
-        proxima_workflow.add_edge("generate_review", "generate_checklist")
-        proxima_workflow.add_edge("generate_checklist", END)
+        proxima_workflow.add_edge("generate_pseudo_solution", "generate_pr_review")
+        proxima_workflow.add_edge("generate_pr_review", "generate_checklist")
+        proxima_workflow.add_edge("generate_checklist", "generate_llm_pr_review")
+        proxima_workflow.add_edge("generate_llm_pr_review", "generate_score")
+        proxima_workflow.add_edge("generate_score", END)
 
         self.graph = proxima_workflow.compile()
 
@@ -71,6 +85,14 @@ class Workflow:
     def generate_checklist_node(self, state: prState):
         print("--- Node 5: Checklist Generation ---")
         return self.checklist_generation_agent.run(state)
+
+    def generate_llm_pr_review_node(self, state: prState):
+        print("--- Node 6: LLM-Generated PR Review ---")
+        return self.llm_generated_pr_review_agent.run(state)
+
+    def generate_score_node(self, state: prState):
+        print("--- Node 7: Score Generation ---")
+        return self.score_generation_agent.run(state)
 
 
 if __name__ == "__main__":
@@ -105,3 +127,7 @@ if __name__ == "__main__":
         print("PR review generated successfully.")
     if final_state.get("checklist"):
         print("Checklist generated successfully.")
+    if final_state.get("llm_generated_pr_review"):
+        print("LLM-generated PR review generated successfully.")
+    if final_state.get("score"):
+        print("Score generated successfully.")

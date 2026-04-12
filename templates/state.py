@@ -121,6 +121,25 @@ class ReviewChecklist(BaseModel):
         description="Concrete checklist items used to evaluate PR review quality.",
     )
 
+
+class ChecklistScore(BaseModel):
+    matched_items: int = Field(
+        ...,
+        description="Number of checklist items addressed by the evaluated PR review.",
+    )
+    total_items: int = Field(
+        ...,
+        description="Total number of checklist items considered during evaluation.",
+    )
+    coverage_score: float = Field(
+        ...,
+        description="Checklist coverage score computed as matched_items divided by total_items.",
+    )
+    evaluation_mode: str = Field(
+        ...,
+        description="Evaluation mode used for scoring, such as checklist or no_checklist.",
+    )
+
 class prState(BaseModel):
     owner: str
     repo: str
@@ -129,3 +148,5 @@ class prState(BaseModel):
     pseudo_solution: PseudoSolution | None = None
     generated_review: GeneratedPRReview | None = None
     checklist: ReviewChecklist | None = None
+    llm_generated_pr_review: GeneratedPRReview | None = None
+    score: ChecklistScore | None = None

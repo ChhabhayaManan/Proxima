@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .env
 .venv/
+.cph/
+data/*/llm_generated_pr_review.json
+data/*/score.json

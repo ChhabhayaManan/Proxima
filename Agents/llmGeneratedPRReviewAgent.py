@@ -1,15 +1,16 @@
-import os
 import json
+import os
 
 from pydantic import BaseModel
-from templates.prompt import build_pr_review_generation_prompt
+
+from templates.prompt import build_llm_generated_pr_review_prompt
 from templates.state import GeneratedPRReview, PseudoSolution, prState
-from utils.models import get_structured_google_model
+from utils.models import DEFAULT_GROQ_MODEL_NAME, get_structured_groq_model
 
 
-class prReviewGenerationAgent:
-    def __init__(self, model_name: str | None = None):
-        self.model = get_structured_google_model(
+class llmGeneratedPRReviewAgent:
+    def __init__(self, model_name: str | None = DEFAULT_GROQ_MODEL_NAME):
+        self.model = get_structured_groq_model(
             GeneratedPRReview,
             model_name=model_name,
         )
@@ -18,7 +19,7 @@ class prReviewGenerationAgent:
         if state.pr_number is None:
             raise ValueError("PR number is missing from the workflow state.")
         if state.pseudo_solution is None:
-            raise ValueError("Pseudo solution must be generated before the review generation step.")
+            raise ValueError("Pseudo solution must be generated before LLM-generated PR review generation.")
 
         folder_path = os.path.join(
             os.path.dirname(os.path.dirname(__file__)),
@@ -28,21 +29,23 @@ class prReviewGenerationAgent:
 
         data_bundle = self.load_pr_data(folder_path)
 
-        prompt = build_pr_review_generation_prompt(
-            pseudo_solution=json.dumps(self.serialize_value(state.pseudo_solution), indent=2),
-            merged_code=json.dumps(data_bundle.get("merged_code", {}), indent=2),
+        prompt = build_llm_generated_pr_review_prompt(
+            pr_metadata=json.dumps(data_bundle.get("pr_details", {}), indent=2, ensure_ascii=False),
+            original_code=json.dumps(data_bundle.get("base_code", {}), indent=2, ensure_ascii=False),
+            generated_code=json.dumps(self.serialize_value(state.pseudo_solution), indent=2, ensure_ascii=False),
         )
 
-        print("Generating PR review with Gemini...")
-        generated_review = self.model.invoke(prompt)
+        print("Generating LLM-generated PR review with Groq using PR metadata, original code, and pseudo solution...")
+        llm_generated_pr_review = self.model.invoke(prompt)
 
-        state.generated_review = generated_review
-        self.save_generated_review(folder_path, generated_review)
+        state.llm_generated_pr_review = llm_generated_pr_review
+        self.save_llm_generated_pr_review(folder_path, llm_generated_pr_review)
         return state.model_dump()
 
     def load_pr_data(self, folder_path: str) -> dict:
         required_files = {
-            "merged_code": "merged_code.json",
+            "pr_details": "pr_details.json",
+            "base_code": "base_code.json",
             "pseudo_solution": "pseudo_solution.json",
         }
 
@@ -65,15 +68,19 @@ class prReviewGenerationAgent:
         if state.pseudo_solution is None:
             state.pseudo_solution = PseudoSolution.model_validate(data_bundle["pseudo_solution"])
 
-    def save_generated_review(self, folder_path: str, generated_review: GeneratedPRReview) -> None:
-        output_path = os.path.join(folder_path, "generated_review.json")
+    def save_llm_generated_pr_review(
+        self,
+        folder_path: str,
+        llm_generated_pr_review: GeneratedPRReview,
+    ) -> None:
+        output_path = os.path.join(folder_path, "llm_generated_pr_review.json")
         with open(output_path, "w", encoding="utf-8") as file:
-            json.dump(generated_review.model_dump(), file, indent=4, ensure_ascii=False)
+            json.dump(llm_generated_pr_review.model_dump(), file, indent=4, ensure_ascii=False)
 
 
 if __name__ == "__main__":
     state = prState(owner="Mintplex-Labs", repo="anything-llm", pr_number=5131)
-    agent = prReviewGenerationAgent()
+    agent = llmGeneratedPRReviewAgent()
     folder_path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)),
         "data",
@@ -82,5 +89,5 @@ if __name__ == "__main__":
     saved_data = agent.load_pr_data(folder_path)
     agent.hydrate_state_from_saved_data(state, saved_data)
     result = agent.run(state)
-    print(state.generated_review)
-    print("Done generating PR review.")
+    print(result)
+    print("Done generating LLM-generated PR review.")
