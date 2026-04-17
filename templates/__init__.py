@@ -12,6 +12,7 @@ from .state import (
     GeneratedPRReview,
     ReviewChecklist,
     ReviewChecklistItem,
+    ChecklistScore,
     prState,
 )
 
@@ -27,6 +28,6 @@ __all__ = [
     "GeneratedPRReview",
     "ReviewChecklist",
     "ReviewChecklistItem",
+    "ChecklistScore",
     "build_checklist_generation_prompt",
-
 ]

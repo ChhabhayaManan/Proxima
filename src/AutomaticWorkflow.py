@@ -49,8 +49,8 @@ def main() -> None:
     
     owner, repo_name = owner_repo.split("/", 1)
     
-    data_gen_model = input("Enter Ollama model for data generation/scoring (default: llama3): ").strip() or "llama3"
-    review_model = input("Enter Ollama model for PR review generation (default: llama3): ").strip() or "llama3"
+    data_gen_model = input("Enter Ollama model for data generation/scoring (default: llama3.1): ").strip() or "llama3.1"
+    review_model = input("Enter Ollama model for PR review generation (default: llama3.1): ").strip() or "llama3.1"
 
     configure_ollama_model(model_name=data_gen_model)
 
@@ -64,24 +64,10 @@ def main() -> None:
         print(f"Error accessing repo {owner}/{repo_name}: {e}")
         sys.exit(1)
 
-    print(f"Scanning closed PRs in {owner}/{repo_name}...")
-    candidate_prs = []
-    try:
-        pulls = repo.get_pulls(state="closed", sort="updated", direction="desc")
-        # For practicality, we will only check the first 50 pages or basically just iterate
-        # But this might be too large. Let's just iterate over the stream until we get enough or exhaust.
-        # Warning: iterating over all closed PRs can be very slow for large repos.
-        for pr in pulls:
-            if pr.changed_files <= 5:
-                # Need to filter out empty PRs that have 0 changed files or no additions
-                if pr.changed_files > 0:
-                    candidate_prs.append(pr)
-    except Exception as e:
-        print(f"Error fetching pull requests: {e}")
-        sys.exit(1)
+    target_process_input = input("How many eligible PRs do you want to successfully evaluate? (default: 10): ").strip()
+    target_process_count = int(target_process_input) if target_process_input.isdigit() else 10
 
-    print(f"Found {len(candidate_prs)} eligible PRs with changed files <= 5.")
-
+    print(f"Initializing workflows...")
     data_workflow = DataGenerationWorkflow(github_token=github_token, provider="ollama")
     eval_workflow = ModelEvaluationWorkflow(provider="ollama")
 
@@ -97,14 +83,36 @@ def main() -> None:
         "status", "checklist_items_text", "review_summary"
     ]
 
+    print(f"Fetching PR stream from {owner}/{repo_name}...")
+    try:
+        pulls = repo.get_pulls(state="closed", sort="updated", direction="desc")
+    except Exception as e:
+        print(f"Error fetching pull requests: {e}")
+        sys.exit(1)
+
+    processed_count = 0
     with open(csv_file, "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=csv_columns, extrasaction="ignore")
         if not file_exists:
             writer.writeheader()
 
-        for pr in tqdm(candidate_prs, desc="Processing PRs"):
+        for pr in pulls:
+            if processed_count >= target_process_count:
+                print(f"\nReached target of {target_process_count} processed PRs.")
+                break
+
+            try:
+                changed_files = pr.changed_files
+            except Exception as e:
+                print(f"Error accessing PR #{pr.number} stats: {e}")
+                continue
+
+            if changed_files > 5 or changed_files == 0:
+                print(f"Skipping PR #{pr.number}: {changed_files} changed files.")
+                continue
+
             print(f"\n=============================================")
-            print(f"Processing PR #{pr.number}: {pr.title}")
+            print(f"Processing PR #{pr.number}: {pr.title} [{processed_count+1}/{target_process_count}]")
             print(f"=============================================")
             
             row = {
@@ -133,8 +141,9 @@ def main() -> None:
                 if final_state.get("checklist"):
                     checklist = final_state["checklist"]
                     items_text = []
-                    for i, item in enumerate(checklist.items):
-                        items_text.append(f"{i+1}. [{item.severity}] {item.file_path}: {item.target} - {item.verification_point} -> {item.expected_outcome}")
+                    if hasattr(checklist, "items") and checklist.items:
+                        for i, item in enumerate(checklist.items):
+                            items_text.append(f"{i+1}. [{item.severity}] {item.file_path}: {item.target} - {item.verification_point} -> {item.expected_outcome}")
                     row["checklist_items_text"] = "\n".join(items_text)
 
                 if final_state.get("llm_generated_pr_review"):
@@ -155,6 +164,7 @@ def main() -> None:
 
             writer.writerow(row)
             f.flush()
+            processed_count += 1
 
     print("\nWorkflow completed.")
 

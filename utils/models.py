@@ -1,114 +1,143 @@
+"""
+Model utilities for Proxima — uses the native `ollama` Python client directly.
+No LangChain wrapper; structured output is handled by passing `format=schema`
+to the Ollama chat API, which is supported by all models server-side.
+"""
+import json
 import os
-from typing import Any
+from typing import Any, Type
+
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 load_dotenv()
 
-DEFAULT_OLLAMA_MODEL_NAME = "llama3"
+DEFAULT_OLLAMA_MODEL_NAME = "llama3.1"
 DEFAULT_TEMPERATURE = 0.2
-DEFAULT_DATA_GENERATION_PROVIDER = "ollama"
-DATA_GENERATION_PROVIDER_ENV = "PROXIMA_DATA_GENERATION_PROVIDER"
-DEFAULT_SCORING_PROVIDER = "ollama"
-SCORING_PROVIDER_ENV = "PROXIMA_SCORING_PROVIDER"
+OLLAMA_BASE_URL_ENV = "OLLAMA_BASE_URL"
 
-_OLLAMA_MODEL_CONFIG: dict[str, Any] = {
-    "base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+# Mutable global config — updated by configure_ollama_model()
+_OLLAMA_CONFIG: dict[str, Any] = {
+    "base_url": os.getenv(OLLAMA_BASE_URL_ENV, "http://localhost:11434"),
     "model_name": DEFAULT_OLLAMA_MODEL_NAME,
     "temperature": DEFAULT_TEMPERATURE,
 }
 
-def normalize_model_provider(provider: str | None) -> str:
-    normalized_provider = (provider or DEFAULT_DATA_GENERATION_PROVIDER).strip().lower()
-    if normalized_provider != "ollama":
-        print(f"Warning: Only Ollama is supported. Forcing provider 'ollama' instead of '{normalized_provider}'.")
-        return "ollama"
-    return normalized_provider
+
+def configure_ollama_model(
+    model_name: str = DEFAULT_OLLAMA_MODEL_NAME,
+    temperature: float = DEFAULT_TEMPERATURE,
+    base_url: str | None = None,
+) -> None:
+    """Update the global Ollama config used by all model helpers."""
+    _OLLAMA_CONFIG["model_name"] = model_name
+    _OLLAMA_CONFIG["temperature"] = temperature
+    if base_url:
+        _OLLAMA_CONFIG["base_url"] = base_url
 
 
-def set_data_generation_provider(provider: str | None) -> str:
-    normalized_provider = normalize_model_provider(provider)
-    os.environ[DATA_GENERATION_PROVIDER_ENV] = normalized_provider
-    return normalized_provider
+def _get_client():
+    """Return a configured native Ollama client."""
+    import ollama
+    return ollama.Client(host=_OLLAMA_CONFIG["base_url"])
 
 
-def get_data_generation_provider() -> str:
-    return normalize_model_provider(os.getenv(DATA_GENERATION_PROVIDER_ENV))
+def _chat(messages: list[dict], format: dict | None = None) -> str:
+    """
+    Call ollama.chat and return the response text.
+    Passes format= only when structured output is needed.
+    """
+    client = _get_client()
+    kwargs: dict[str, Any] = {
+        "model": _OLLAMA_CONFIG["model_name"],
+        "messages": messages,
+        "options": {"temperature": _OLLAMA_CONFIG["temperature"]},
+    }
+    if format is not None:
+        kwargs["format"] = format
+
+    response = client.chat(**kwargs)
+    return response.message.content
 
 
-def set_scoring_provider(provider: str | None) -> str:
-    normalized_provider = normalize_model_provider(provider)
-    os.environ[SCORING_PROVIDER_ENV] = normalized_provider
-    return normalized_provider
+def invoke_plain(prompt: str) -> str:
+    """Send a plain text prompt and return the text response."""
+    return _chat([{"role": "user", "content": prompt}])
 
 
-def get_scoring_provider() -> str:
-    return normalize_model_provider(os.getenv(SCORING_PROVIDER_ENV) or DEFAULT_SCORING_PROVIDER)
+def invoke_structured(prompt: str, schema: Type[BaseModel]) -> BaseModel:
+    """
+    Send a prompt and parse the response into a Pydantic model.
+    Uses Ollama's native `format` parameter — no tool-calling required.
+    """
+    raw = _chat(
+        [{"role": "user", "content": prompt}],
+        format=schema.model_json_schema(),
+    )
+    # Attempt to parse; raise immediately on first failure so errors surface fast
+    return schema.model_validate_json(raw)
 
 
-def get_provider_display_name(provider: str) -> str:
+# ---------------------------------------------------------------------------
+# Compatibility shims — keeps existing agent code working without changes
+# ---------------------------------------------------------------------------
+
+def get_provider_display_name(provider: str = "ollama") -> str:
     return "Ollama Offline"
 
 
-def configure_ollama_model(
-    base_url: str | None = None,
-    model_name: str = DEFAULT_OLLAMA_MODEL_NAME,
-    temperature: float = DEFAULT_TEMPERATURE,
-) -> None:
-    _OLLAMA_MODEL_CONFIG["base_url"] = base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    _OLLAMA_MODEL_CONFIG["model_name"] = model_name
-    _OLLAMA_MODEL_CONFIG["temperature"] = temperature
+def normalize_model_provider(provider: str | None) -> str:
+    return "ollama"
 
 
-def get_ollama_model(
-    model_name: str | None = None,
-    temperature: float | None = None,
-):
-    try:
-        from langchain_ollama import ChatOllama
-    except ImportError as exc:
-        raise ImportError(
-            "langchain-ollama is required for Ollama models. Install it with `pip install langchain-ollama`."
-        ) from exc
+def get_data_generation_provider() -> str:
+    return "ollama"
 
-    return ChatOllama(
-        base_url=_OLLAMA_MODEL_CONFIG["base_url"],
-        model=model_name or _OLLAMA_MODEL_CONFIG["model_name"],
-        temperature=temperature if temperature is not None else _OLLAMA_MODEL_CONFIG["temperature"],
-    )
+
+def get_scoring_provider() -> str:
+    return "ollama"
+
+
+def get_ollama_model(model_name: str | None = None, temperature: float | None = None):
+    """
+    Returns a thin callable wrapper around invoke_plain, mimicking the
+    LangChain `.invoke(prompt)` interface so existing agents need minimal changes.
+    """
+    class _PlainInvoker:
+        def invoke(self, prompt: str) -> str:
+            return invoke_plain(prompt)
+
+    return _PlainInvoker()
 
 
 def get_structured_ollama_model(
-    output_schema: Any,
+    output_schema: Type[BaseModel],
     model_name: str | None = None,
     temperature: float | None = None,
 ):
-    return get_ollama_model(
-        model_name=model_name,
-        temperature=temperature,
-    ).with_structured_output(output_schema)
+    """
+    Returns a thin callable wrapper around invoke_structured, mimicking the
+    LangChain `.invoke(prompt) -> BaseModel` interface.
+    """
+    class _StructuredInvoker:
+        def invoke(self, prompt: str) -> BaseModel:
+            return invoke_structured(prompt, output_schema)
+
+    return _StructuredInvoker()
 
 
 def get_structured_model(
-    output_schema: Any,
-    provider: str,
+    output_schema: Type[BaseModel],
+    provider: str = "ollama",
     model_name: str | None = None,
     temperature: float | None = None,
 ):
-    # Only Ollama is used
-    return get_structured_ollama_model(
-        output_schema,
-        model_name=model_name,
-        temperature=temperature,
-    )
+    return get_structured_ollama_model(output_schema, model_name, temperature)
 
 
 def get_model_for_provider(
-    provider: str,
+    provider: str = "ollama",
     model_name: str | None = None,
     temperature: float | None = None,
 ):
-    # Only Ollama is used
-    return get_ollama_model(
-        model_name=model_name,
-        temperature=temperature,
-    )
+    return get_ollama_model(model_name, temperature)

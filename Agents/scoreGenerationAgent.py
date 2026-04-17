@@ -68,6 +68,9 @@ class scoreGenerationAgent:
         return value
 
     def extract_response_text(self, response: Any) -> str:
+        # Native ollama client via get_model_for_provider returns a plain string
+        if isinstance(response, str):
+            return response
         content = getattr(response, "content", response)
         return self.normalize_response_content(content)
 
