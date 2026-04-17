@@ -35,9 +35,23 @@ class gitPRRetriever:
         )
 
         data, pr_details, issue_details = self.collect_pr_artifacts(repo, selected_pr)
-        self.store_data(data, state.owner, repo.name, selected_pr.number, pr_details, issue_details)
+        
+        changed_code = {}
+        base_code = {}
+        merged_code = {}
 
+        for key, value in data.items():
+            changed_code[key] = value["changed_lines"]
+            base_code[key] = value["base_content"]
+            merged_code[key] = value["head_content"]
+
+        state.base_code = base_code
+        state.merged_code = merged_code
+        state.changed_code = changed_code
+        state.pr_details = pr_details
+        state.issue_details = issue_details
         state.pr_number = selected_pr.number
+        
         return state.model_dump()
 
     def select_pr(self, repo):
@@ -112,8 +126,6 @@ class gitPRRetriever:
                 {
                     "user": comment.user.login if comment.user else None,
                     "body": comment.body or "",
-                    "created_at": comment.created_at.isoformat() if comment.created_at else None,
-                    "updated_at": comment.updated_at.isoformat() if comment.updated_at else None,
                 }
             )
 
@@ -125,8 +137,6 @@ class gitPRRetriever:
                     "body": comment.body or "",
                     "path": comment.path,
                     "line": comment.line,
-                    "created_at": comment.created_at.isoformat() if comment.created_at else None,
-                    "updated_at": comment.updated_at.isoformat() if comment.updated_at else None,
                 }
             )
 
@@ -231,44 +241,3 @@ class gitPRRetriever:
 
         return issue_numbers
 
-    def store_data(self, data, owner, repo_name, pr_number, pr_details, issue_details):
-        changed_code = {}
-        base_code = {}
-        merged_code = {}
-
-        for key, value in data.items():
-            changed_code[key] = value["changed_lines"]
-            base_code[key] = value["base_content"]
-            merged_code[key] = value["head_content"]
-
-        folder_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            "data",
-            f"{owner}_{repo_name}_pr{pr_number}",
-        )
-        os.makedirs(folder_path, exist_ok=True)
-
-        with open(os.path.join(folder_path, "base_code.json"), "w", encoding="utf-8") as f:
-            json.dump(base_code, f, indent=4)
-
-        with open(os.path.join(folder_path, "merged_code.json"), "w", encoding="utf-8") as f:
-            json.dump(merged_code, f, indent=4)
-
-        with open(os.path.join(folder_path, "changed_code.json"), "w", encoding="utf-8") as f:
-            json.dump(changed_code, f, indent=4)
-
-        with open(os.path.join(folder_path, "pr_details.json"), "w", encoding="utf-8") as f:
-            json.dump(pr_details, f, indent=4, ensure_ascii=False)
-
-        with open(os.path.join(folder_path, "issue.json"), "w", encoding="utf-8") as f:
-            json.dump(issue_details, f, indent=4, ensure_ascii=False)
-
-
-if __name__ == "__main__":
-    token = os.getenv("GITHUB_TOKEN")
-    if not token:
-        raise ValueError("Set GITHUB_TOKEN in your environment before running this script.")
-
-    scraper = gitPRRetriever(token)
-    state = prState(owner="Mintplex-Labs", repo="anything-llm", pr_number=1)
-    scraper.run(state)

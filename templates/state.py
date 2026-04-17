@@ -144,6 +144,11 @@ class prState(BaseModel):
     owner: str
     repo: str
     pr_number: int | None = None
+    pr_details: dict | None = None
+    issue_details: dict | None = None
+    base_code: dict | None = None
+    merged_code: dict | None = None
+    changed_code: dict | None = None
     review_instruct: ReviewInstruction | None = None
     pseudo_solution: PseudoSolution | None = None
     checklist: ReviewChecklist | None = None

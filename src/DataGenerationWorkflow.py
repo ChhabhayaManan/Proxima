@@ -16,49 +16,24 @@ from Agents import (
     pseudoSolutionAgent,
 )
 from templates.state import prState
-from utils.models import DEFAULT_MODEL_NAME, configure_google_model
-
+from utils.models import get_data_generation_provider
 
 load_dotenv()
 
 
-def initialize_data_generation_runtime() -> None:
-    github_token = os.getenv("GITHUB_TOKEN") or input("Enter GitHub token: ").strip()
-    if not github_token:
-        raise ValueError("A GitHub token is required. Set GITHUB_TOKEN or enter it when prompted.")
-
-    google_api_key = (
-        os.getenv("GEMINI_API_KEY")
-        or os.getenv("GOOGLE_API_KEY")
-        or input("Enter Gemini/Google API key: ").strip()
-    )
-    if not google_api_key:
-        raise ValueError(
-            "A Gemini/Google API key is required. Set GEMINI_API_KEY / GOOGLE_API_KEY or enter it when prompted."
-        )
-
-    model_name = input(
-        f"Enter Google model name (press Enter for {DEFAULT_MODEL_NAME}): "
-    ).strip() or DEFAULT_MODEL_NAME
-
-    os.environ["GITHUB_TOKEN"] = github_token
-    configure_google_model(api_key=google_api_key, model_name=model_name)
-
-
 class DataGenerationWorkflow:
-    def __init__(self):
-        resolved_github_token = (os.getenv("GITHUB_TOKEN") or "").strip()
+    def __init__(self, github_token: str | None = None, provider: str = "ollama"):
+        resolved_github_token = (github_token or os.getenv("GITHUB_TOKEN") or "").strip()
         if not resolved_github_token:
             raise ValueError(
-                "A GitHub token is required. Set GITHUB_TOKEN or call initialize_data_generation_runtime() first."
+                "A GitHub token is required. Set GITHUB_TOKEN."
             )
 
-        configure_google_model()
-
+        self.provider = provider
         self.pr_retriever = gitPRRetriever(resolved_github_token)
-        self.review_instruction_agent = prReviewInstructionAgent()
-        self.pseudo_solution_agent = pseudoSolutionAgent()
-        self.checklist_generation_agent = checklistGenerationAgent()
+        self.review_instruction_agent = prReviewInstructionAgent(provider=self.provider)
+        self.pseudo_solution_agent = pseudoSolutionAgent(provider=self.provider)
+        self.checklist_generation_agent = checklistGenerationAgent(provider=self.provider)
 
         proxima_workflow = StateGraph(prState)
         proxima_workflow.add_node("retrieve_pr", self.retrieve_pr_node)
@@ -89,35 +64,3 @@ class DataGenerationWorkflow:
     def generate_checklist_node(self, state: prState):
         print("--- Node 4: Checklist Generation ---")
         return self.checklist_generation_agent.run(state)
-
-
-def main() -> None:
-    initialize_data_generation_runtime()
-
-    owner = "pathwaycom"
-    repo = "llm-app"
-    pr_number_text = input("Enter PR number (leave blank to choose interactively): ").strip()
-
-    initial_state = prState(
-        owner=owner,
-        repo=repo,
-        pr_number=int(pr_number_text) if pr_number_text else None,
-    )
-
-    workflow = DataGenerationWorkflow()
-    print("Starting data generation workflow...")
-    final_state = workflow.graph.invoke(initial_state)
-
-    print("\n==================\nData Generation Finished!\n==================")
-    if final_state.get("pr_number") is not None:
-        print(f"Reviewed PR: {final_state['pr_number']}")
-    if final_state.get("review_instruct"):
-        print("Review instructions generated successfully.")
-    if final_state.get("pseudo_solution"):
-        print("Pseudo solution generated successfully.")
-    if final_state.get("checklist"):
-        print("Checklist generated successfully.")
-
-
-if __name__ == "__main__":
-    main()

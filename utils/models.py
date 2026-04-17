@@ -1,123 +1,114 @@
 import os
 from typing import Any
-
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
-
 
 load_dotenv()
 
-DEFAULT_MODEL_NAME = "gemini-3.1-flash-lite-preview"
+DEFAULT_OLLAMA_MODEL_NAME = "llama3"
 DEFAULT_TEMPERATURE = 0.2
+DEFAULT_DATA_GENERATION_PROVIDER = "ollama"
+DATA_GENERATION_PROVIDER_ENV = "PROXIMA_DATA_GENERATION_PROVIDER"
+DEFAULT_SCORING_PROVIDER = "ollama"
+SCORING_PROVIDER_ENV = "PROXIMA_SCORING_PROVIDER"
 
-_MODEL_CONFIG: dict[str, Any] = {
-    "api_key": None,
-    "model_name": DEFAULT_MODEL_NAME,
+_OLLAMA_MODEL_CONFIG: dict[str, Any] = {
+    "base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+    "model_name": DEFAULT_OLLAMA_MODEL_NAME,
     "temperature": DEFAULT_TEMPERATURE,
 }
 
-DEFAULT_GROQ_MODEL_NAME = "llama-3.3-70b-versatile"
+def normalize_model_provider(provider: str | None) -> str:
+    normalized_provider = (provider or DEFAULT_DATA_GENERATION_PROVIDER).strip().lower()
+    if normalized_provider != "ollama":
+        print(f"Warning: Only Ollama is supported. Forcing provider 'ollama' instead of '{normalized_provider}'.")
+        return "ollama"
+    return normalized_provider
 
-_GROQ_MODEL_CONFIG: dict[str, Any] = {
-    "api_key": None,
-    "model_name": DEFAULT_GROQ_MODEL_NAME,
-    "temperature": DEFAULT_TEMPERATURE,
-}
+
+def set_data_generation_provider(provider: str | None) -> str:
+    normalized_provider = normalize_model_provider(provider)
+    os.environ[DATA_GENERATION_PROVIDER_ENV] = normalized_provider
+    return normalized_provider
 
 
-def configure_google_model(
-    api_key: str | None = None,
-    model_name: str = DEFAULT_MODEL_NAME,
+def get_data_generation_provider() -> str:
+    return normalize_model_provider(os.getenv(DATA_GENERATION_PROVIDER_ENV))
+
+
+def set_scoring_provider(provider: str | None) -> str:
+    normalized_provider = normalize_model_provider(provider)
+    os.environ[SCORING_PROVIDER_ENV] = normalized_provider
+    return normalized_provider
+
+
+def get_scoring_provider() -> str:
+    return normalize_model_provider(os.getenv(SCORING_PROVIDER_ENV) or DEFAULT_SCORING_PROVIDER)
+
+
+def get_provider_display_name(provider: str) -> str:
+    return "Ollama Offline"
+
+
+def configure_ollama_model(
+    base_url: str | None = None,
+    model_name: str = DEFAULT_OLLAMA_MODEL_NAME,
     temperature: float = DEFAULT_TEMPERATURE,
 ) -> None:
-    resolved_api_key = (
-        (api_key or "").strip()
-        or os.getenv("GEMINI_API_KEY")
-        or os.getenv("GOOGLE_API_KEY")
-    )
-    if not resolved_api_key:
-        raise ValueError(
-            "A Gemini/Google API key is required. Enter it when prompted or set GEMINI_API_KEY / GOOGLE_API_KEY."
-        )
-
-    _MODEL_CONFIG["api_key"] = resolved_api_key
-    _MODEL_CONFIG["model_name"] = model_name
-    _MODEL_CONFIG["temperature"] = temperature
-
-    os.environ["GEMINI_API_KEY"] = resolved_api_key
-    os.environ["GOOGLE_API_KEY"] = resolved_api_key
+    _OLLAMA_MODEL_CONFIG["base_url"] = base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    _OLLAMA_MODEL_CONFIG["model_name"] = model_name
+    _OLLAMA_MODEL_CONFIG["temperature"] = temperature
 
 
-def get_google_model(
-    model_name: str | None = None,
-    temperature: float | None = None,
-) -> ChatGoogleGenerativeAI:
-    if _MODEL_CONFIG["api_key"] is None:
-        configure_google_model()
-
-    return ChatGoogleGenerativeAI(
-        model=model_name or _MODEL_CONFIG["model_name"],
-        temperature=temperature if temperature is not None else _MODEL_CONFIG["temperature"],
-        api_key=_MODEL_CONFIG["api_key"],
-    )
-
-
-def get_structured_google_model(
-    output_schema: Any,
+def get_ollama_model(
     model_name: str | None = None,
     temperature: float | None = None,
 ):
-    return get_google_model(
-        model_name=model_name,
-        temperature=temperature,
-    ).with_structured_output(output_schema)
-
-
-def configure_groq_model(
-    api_key: str | None = None,
-    model_name: str = DEFAULT_GROQ_MODEL_NAME,
-    temperature: float = DEFAULT_TEMPERATURE,
-) -> None:
-    resolved_api_key = (api_key or "").strip() or os.getenv("GROQ_API_KEY")
-    if not resolved_api_key:
-        raise ValueError(
-            "A Groq API key is required. Provide it or set GROQ_API_KEY."
-        )
-
-    _GROQ_MODEL_CONFIG["api_key"] = resolved_api_key
-    _GROQ_MODEL_CONFIG["model_name"] = model_name
-    _GROQ_MODEL_CONFIG["temperature"] = temperature
-
-    os.environ["GROQ_API_KEY"] = resolved_api_key
-
-
-def get_groq_model(
-    model_name: str | None = None,
-    temperature: float | None = None,
-):
-    if _GROQ_MODEL_CONFIG["api_key"] is None:
-        configure_groq_model()
-
     try:
-        from langchain_groq import ChatGroq
+        from langchain_ollama import ChatOllama
     except ImportError as exc:
         raise ImportError(
-            "langchain-groq is required for Groq models. Install it with `pip install langchain-groq`."
+            "langchain-ollama is required for Ollama models. Install it with `pip install langchain-ollama`."
         ) from exc
 
-    return ChatGroq(
-        model=model_name or _GROQ_MODEL_CONFIG["model_name"],
-        temperature=temperature if temperature is not None else _GROQ_MODEL_CONFIG["temperature"],
-        api_key=_GROQ_MODEL_CONFIG["api_key"],
+    return ChatOllama(
+        base_url=_OLLAMA_MODEL_CONFIG["base_url"],
+        model=model_name or _OLLAMA_MODEL_CONFIG["model_name"],
+        temperature=temperature if temperature is not None else _OLLAMA_MODEL_CONFIG["temperature"],
     )
 
 
-def get_structured_groq_model(
+def get_structured_ollama_model(
     output_schema: Any,
     model_name: str | None = None,
     temperature: float | None = None,
 ):
-    return get_groq_model(
+    return get_ollama_model(
         model_name=model_name,
         temperature=temperature,
     ).with_structured_output(output_schema)
+
+
+def get_structured_model(
+    output_schema: Any,
+    provider: str,
+    model_name: str | None = None,
+    temperature: float | None = None,
+):
+    # Only Ollama is used
+    return get_structured_ollama_model(
+        output_schema,
+        model_name=model_name,
+        temperature=temperature,
+    )
+
+
+def get_model_for_provider(
+    provider: str,
+    model_name: str | None = None,
+    temperature: float | None = None,
+):
+    # Only Ollama is used
+    return get_ollama_model(
+        model_name=model_name,
+        temperature=temperature,
+    )

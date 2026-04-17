@@ -8,16 +8,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.DataGenerationWorkflow import DataGenerationWorkflow
-from src.ModelEvaluationWorkflow import ModelEvaluationWorkflow
+from src.DataGenerationWorkflow import DataGenerationWorkflow, initialize_data_generation_runtime
+from src.ModelEvaluationWorkflow import ModelEvaluationWorkflow, initialize_model_evaluation_runtime
 from templates.state import prState
-from utils.models import (
-    DEFAULT_GROQ_MODEL_NAME,
-    DEFAULT_MODEL_NAME,
-    configure_google_model,
-    configure_groq_model,
-)
-
 
 load_dotenv()
 
@@ -48,34 +41,8 @@ class Workflow:
 
 
 def initialize_workflow_runtime() -> None:
-    github_token = os.getenv("GITHUB_TOKEN") or input("Enter GitHub token: ").strip()
-    if not github_token:
-        raise ValueError("A GitHub token is required. Set GITHUB_TOKEN or enter it when prompted.")
-
-    google_api_key = (
-        os.getenv("GEMINI_API_KEY")
-        or os.getenv("GOOGLE_API_KEY")
-        or input("Enter Gemini/Google API key: ").strip()
-    )
-    if not google_api_key:
-        raise ValueError(
-            "A Gemini/Google API key is required. Set GEMINI_API_KEY / GOOGLE_API_KEY or enter it when prompted."
-        )
-
-    groq_api_key = os.getenv("GROQ_API_KEY") or input("Enter Groq API key: ").strip()
-    if not groq_api_key:
-        raise ValueError("A Groq API key is required. Set GROQ_API_KEY or enter it when prompted.")
-
-    google_model_name = input(
-        f"Enter Google model name (press Enter for {DEFAULT_MODEL_NAME}): "
-    ).strip() or DEFAULT_MODEL_NAME
-    groq_model_name = input(
-        f"Enter Groq model name (press Enter for {DEFAULT_GROQ_MODEL_NAME}): "
-    ).strip() or DEFAULT_GROQ_MODEL_NAME
-
-    os.environ["GITHUB_TOKEN"] = github_token
-    configure_google_model(api_key=google_api_key, model_name=google_model_name)
-    configure_groq_model(api_key=groq_api_key, model_name=groq_model_name)
+    initialize_data_generation_runtime()
+    initialize_model_evaluation_runtime()
 
 
 if __name__ == "__main__":
