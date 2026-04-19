@@ -25,9 +25,21 @@ class _SequentialWorkflowGraph:
         self.model_evaluation_workflow = model_evaluation_workflow
 
     def invoke(self, state: prState | dict) -> dict:
-        data_generation_result = self.data_generation_workflow.graph.invoke(state)
+        import concurrent.futures
+
+        def run_with_timeout(func, args, timeout=300):
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(func, *args)
+                return future.result(timeout=timeout)
+
+        data_generation_result = run_with_timeout(self.data_generation_workflow.graph.invoke, (state,))
         evaluation_input = prState.model_validate(data_generation_result)
-        return self.model_evaluation_workflow.graph.invoke(evaluation_input)
+        
+        assert evaluation_input.review_instruct is not None, "Review instruction lost during state handoff!"
+        assert evaluation_input.pseudo_solution is not None, "Pseudo solution lost during state handoff!"
+        assert evaluation_input.checklist is not None, "Checklist lost during state handoff!"
+
+        return run_with_timeout(self.model_evaluation_workflow.graph.invoke, (evaluation_input,))
 
 
 class Workflow:

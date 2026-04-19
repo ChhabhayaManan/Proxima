@@ -5,6 +5,8 @@ to the Ollama chat API, which is supported by all models server-side.
 """
 import json
 import os
+import re
+import copy
 from typing import Any, Type
 
 from dotenv import load_dotenv
@@ -30,16 +32,39 @@ def configure_ollama_model(
     base_url: str | None = None,
 ) -> None:
     """Update the global Ollama config used by all model helpers."""
+    previous_model = _OLLAMA_CONFIG.get("model_name")
+    
     _OLLAMA_CONFIG["model_name"] = model_name
     _OLLAMA_CONFIG["temperature"] = temperature
     if base_url:
         _OLLAMA_CONFIG["base_url"] = base_url
 
+    if previous_model and previous_model != model_name:
+        try:
+            client = _get_client()
+            client.generate(model=previous_model, prompt="", keep_alive=0)
+        except Exception:
+            pass
+
 
 def _get_client():
     """Return a configured native Ollama client."""
     import ollama
-    return ollama.Client(host=_OLLAMA_CONFIG["base_url"])
+    return ollama.Client(
+        host=_OLLAMA_CONFIG["base_url"],
+        timeout=120.0,
+    )
+
+def _resolve_schema(schema: dict) -> dict:
+    """Inline all $defs so Ollama grammar parser doesn't choke on $refs."""
+    defs = schema.get("$defs", {})
+    schema_str = json.dumps(schema)
+    for name, definition in defs.items():
+        ref = f'"$ref": "#/$defs/{name}"'
+        schema_str = schema_str.replace(ref, json.dumps(definition)[1:-1])
+    result = json.loads(schema_str)
+    result.pop("$defs", None)
+    return result
 
 
 def _chat(messages: list[dict], format: dict | None = None) -> str:
@@ -51,10 +76,15 @@ def _chat(messages: list[dict], format: dict | None = None) -> str:
     kwargs: dict[str, Any] = {
         "model": _OLLAMA_CONFIG["model_name"],
         "messages": messages,
-        "options": {"temperature": _OLLAMA_CONFIG["temperature"]},
+        "options": {
+            "temperature": _OLLAMA_CONFIG["temperature"],
+            "num_ctx": 16384,
+            "num_predict": 2048,
+            "num_gpu": 99,
+        },
     }
     if format is not None:
-        kwargs["format"] = format
+        kwargs["format"] = _resolve_schema(format)
 
     response = client.chat(**kwargs)
     return response.message.content
@@ -74,8 +104,16 @@ def invoke_structured(prompt: str, schema: Type[BaseModel]) -> BaseModel:
         [{"role": "user", "content": prompt}],
         format=schema.model_json_schema(),
     )
-    # Attempt to parse; raise immediately on first failure so errors surface fast
-    return schema.model_validate_json(raw)
+    # Strip markdown fences in case model ignores format=
+    clean = re.sub(r"```(?:json)?\s*|\s*```", "", raw).strip()
+    try:
+        return schema.model_validate_json(clean)
+    except Exception:
+        # Try extracting JSON object/array from the text
+        match = re.search(r"\{.*\}", clean, re.DOTALL)
+        if match:
+            return schema.model_validate_json(match.group(0))
+        raise
 
 
 # ---------------------------------------------------------------------------

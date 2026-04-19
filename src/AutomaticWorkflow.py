@@ -2,6 +2,7 @@ import csv
 import os
 import sys
 import traceback
+import concurrent.futures
 from datetime import datetime
 from pathlib import Path
 
@@ -124,18 +125,26 @@ def main() -> None:
             }
 
             try:
+                def run_with_timeout(func, args, timeout=300):
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(func, *args)
+                        return future.result(timeout=timeout)
+
                 # 1. New State for each PR
                 state = prState(owner=owner, repo=repo_name, pr_number=pr.number)
                 
                 # 2. Data Generation
                 configure_ollama_model(model_name=data_gen_model)
-                out_state = data_workflow.graph.invoke(state)
+                out_state = run_with_timeout(data_workflow.graph.invoke, (state,))
 
                 eval_state = prState.model_validate(out_state)
+                assert eval_state.review_instruct is not None, "Review instruction lost during state handoff!"
+                assert eval_state.pseudo_solution is not None, "Pseudo solution lost during state handoff!"
+                assert eval_state.checklist is not None, "Checklist lost during state handoff!"
 
                 # 3. Model Evaluation
                 configure_ollama_model(model_name=review_model)
-                final_state = eval_workflow.graph.invoke(eval_state)
+                final_state = run_with_timeout(eval_workflow.graph.invoke, (eval_state,))
                 
                 # Populate results
                 if final_state.get("checklist"):
