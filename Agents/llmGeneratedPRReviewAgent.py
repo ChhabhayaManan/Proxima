@@ -8,8 +8,12 @@ from templates.prompt import build_llm_generated_pr_review_prompt
 from templates.state import GeneratedPRReview, PseudoSolution, prState
 from utils.models import (
     DEFAULT_GROQ_MODEL_NAME,
+    DEFAULT_OLLAMA_MODEL_NAME,
     configure_groq_model,
-    get_structured_groq_model,
+    configure_ollama_model,
+    get_provider_display_name,
+    get_structured_model,
+    normalize_provider,
 )
 
 
@@ -17,8 +21,10 @@ load_dotenv()
 
 
 class llmGeneratedPRReviewAgent:
-    def __init__(self, model_name: str | None = DEFAULT_GROQ_MODEL_NAME):
-        self.model = get_structured_groq_model(
+    def __init__(self, model_name: str | None = DEFAULT_GROQ_MODEL_NAME, provider: str = "groq"):
+        self.provider = normalize_provider(provider, default="groq")
+        self.model = get_structured_model(
+            self.provider,
             GeneratedPRReview,
             model_name=model_name,
         )
@@ -44,7 +50,10 @@ class llmGeneratedPRReviewAgent:
             generated_code=json.dumps(self.serialize_value(state.pseudo_solution), indent=2, ensure_ascii=False),
         )
 
-        print("Generating LLM-generated PR review with Groq using PR metadata, original code, pseudo solution, and merged code...")
+        print(
+            "Generating LLM-generated PR review with "
+            f"{get_provider_display_name(self.provider)} using PR metadata, original code, pseudo solution, and merged code..."
+        )
         llm_generated_pr_review = self.model.invoke(prompt)
 
         state.llm_generated_pr_review = llm_generated_pr_review
@@ -88,21 +97,30 @@ class llmGeneratedPRReviewAgent:
 
 
 if __name__ == "__main__":
-    groq_api_key = os.getenv("GROQ_API_KEY") or input("Enter Groq API key: ").strip()
-    if not groq_api_key:
-        raise ValueError("A Groq API key is required. Set GROQ_API_KEY or enter it when prompted.")
+    ollama_model_name = input(
+        "Enter Ollama model name for offline review generation (leave blank to use Groq): "
+    ).strip()
+    if ollama_model_name:
+        provider = "ollama"
+        model_name = ollama_model_name or DEFAULT_OLLAMA_MODEL_NAME
+        configure_ollama_model(model_name=model_name)
+    else:
+        provider = "groq"
+        groq_api_key = os.getenv("GROQ_API_KEY") or input("Enter Groq API key: ").strip()
+        if not groq_api_key:
+            raise ValueError("A Groq API key is required. Set GROQ_API_KEY or enter it when prompted.")
 
-    model_name = input(
-        f"Enter Groq model name (press Enter for {DEFAULT_GROQ_MODEL_NAME}): "
-    ).strip() or DEFAULT_GROQ_MODEL_NAME
-    configure_groq_model(api_key=groq_api_key, model_name=model_name)
+        model_name = input(
+            f"Enter Groq model name (press Enter for {DEFAULT_GROQ_MODEL_NAME}): "
+        ).strip() or DEFAULT_GROQ_MODEL_NAME
+        configure_groq_model(api_key=groq_api_key, model_name=model_name)
 
     owner = input("Enter repository owner: ").strip()
     repo = input("Enter repository name: ").strip()
     pr_number = int(input("Enter PR number: ").strip())
 
     state = prState(owner=owner, repo=repo, pr_number=pr_number)
-    agent = llmGeneratedPRReviewAgent(model_name=model_name)
+    agent = llmGeneratedPRReviewAgent(model_name=model_name, provider=provider)
     result = agent.run(state)
     print(result)
     print("Done generating LLM-generated PR review.")

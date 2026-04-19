@@ -16,16 +16,24 @@ from Agents import (
     pseudoSolutionAgent,
 )
 from templates.state import prState
-from utils.models import DEFAULT_MODEL_NAME, configure_google_model
+from utils.models import DEFAULT_MODEL_NAME, configure_model_provider, normalize_provider
 
 
 load_dotenv()
 
 
-def initialize_data_generation_runtime() -> None:
+def initialize_data_generation_runtime() -> tuple[str, str | None]:
     github_token = os.getenv("GITHUB_TOKEN") or input("Enter GitHub token: ").strip()
     if not github_token:
         raise ValueError("A GitHub token is required. Set GITHUB_TOKEN or enter it when prompted.")
+
+    ollama_model_name = input(
+        "Enter Ollama model name for offline data generation (leave blank to use Google): "
+    ).strip()
+    if ollama_model_name:
+        os.environ["GITHUB_TOKEN"] = github_token
+        configure_model_provider("ollama", model_name=ollama_model_name)
+        return "ollama", ollama_model_name
 
     google_api_key = (
         os.getenv("GEMINI_API_KEY")
@@ -42,23 +50,37 @@ def initialize_data_generation_runtime() -> None:
     ).strip() or DEFAULT_MODEL_NAME
 
     os.environ["GITHUB_TOKEN"] = github_token
-    configure_google_model(api_key=google_api_key, model_name=model_name)
+    configure_model_provider("google", api_key=google_api_key, model_name=model_name)
+    return "google", model_name
 
 
 class DataGenerationWorkflow:
-    def __init__(self):
+    def __init__(self, model_provider: str = "google", model_name: str | None = None):
         resolved_github_token = (os.getenv("GITHUB_TOKEN") or "").strip()
         if not resolved_github_token:
             raise ValueError(
                 "A GitHub token is required. Set GITHUB_TOKEN or call initialize_data_generation_runtime() first."
             )
 
-        configure_google_model()
+        self.model_provider = normalize_provider(model_provider, default="google")
+        if self.model_provider not in {"google", "ollama"}:
+            raise ValueError("DataGenerationWorkflow supports only Google or Ollama providers.")
+
+        configure_model_provider(self.model_provider, model_name=model_name)
 
         self.pr_retriever = gitPRRetriever(resolved_github_token)
-        self.review_instruction_agent = prReviewInstructionAgent()
-        self.pseudo_solution_agent = pseudoSolutionAgent()
-        self.checklist_generation_agent = checklistGenerationAgent()
+        self.review_instruction_agent = prReviewInstructionAgent(
+            model_name=model_name,
+            provider=self.model_provider,
+        )
+        self.pseudo_solution_agent = pseudoSolutionAgent(
+            model_name=model_name,
+            provider=self.model_provider,
+        )
+        self.checklist_generation_agent = checklistGenerationAgent(
+            model_name=model_name,
+            provider=self.model_provider,
+        )
 
         proxima_workflow = StateGraph(prState)
         proxima_workflow.add_node("retrieve_pr", self.retrieve_pr_node)
@@ -92,7 +114,7 @@ class DataGenerationWorkflow:
 
 
 def main() -> None:
-    initialize_data_generation_runtime()
+    model_provider, model_name = initialize_data_generation_runtime()
 
     owner = "pathwaycom"
     repo = "llm-app"
@@ -104,7 +126,7 @@ def main() -> None:
         pr_number=int(pr_number_text) if pr_number_text else None,
     )
 
-    workflow = DataGenerationWorkflow()
+    workflow = DataGenerationWorkflow(model_provider=model_provider, model_name=model_name)
     print("Starting data generation workflow...")
     final_state = workflow.graph.invoke(initial_state)
 

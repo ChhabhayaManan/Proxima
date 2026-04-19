@@ -4,12 +4,14 @@ import json
 from pydantic import BaseModel
 from templates.prompt import build_checklist_generation_prompt
 from templates.state import PseudoSolution, ReviewChecklist, prState
-from utils.models import get_structured_google_model
+from utils.models import get_provider_display_name, get_structured_model, normalize_provider
 
 
 class checklistGenerationAgent:
-    def __init__(self, model_name: str | None = None):
-        self.model = get_structured_google_model(
+    def __init__(self, model_name: str | None = None, provider: str = "google"):
+        self.provider = normalize_provider(provider, default="google")
+        self.model = get_structured_model(
+            self.provider,
             ReviewChecklist,
             model_name=model_name,
         )
@@ -33,7 +35,7 @@ class checklistGenerationAgent:
             changed_code=json.dumps(data_bundle.get("changed_code", {}), indent=2, ensure_ascii=False),
         )
 
-        print("Generating review checklist with Gemini...")
+        print(f"Generating review checklist with {get_provider_display_name(self.provider)}...")
         checklist = self.model.invoke(prompt)
 
         state.checklist = checklist
