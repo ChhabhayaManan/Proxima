@@ -7,9 +7,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DEFAULT_MODEL_NAME = "gemini-3.1-flash-lite-preview"
-DEFAULT_OLLAMA_MODEL_NAME = os.getenv("OLLAMA_MODEL_NAME", "llama3.1")
+DEFAULT_OLLAMA_MODEL_NAME = os.getenv("OLLAMA_MODEL_NAME", "qwen3.5:9b")
 DEFAULT_TEMPERATURE = 0.2
-DEFAULT_OLLAMA_CONTEXT_WINDOW = 16_384
+DEFAULT_OLLAMA_CONTEXT_WINDOW = int(os.getenv("OLLAMA_NUM_CTX", "16384"))
 DEFAULT_OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
 ModelProvider = Literal["google", "groq", "ollama"]
@@ -41,6 +41,29 @@ _PROVIDER_LABELS: dict[ModelProvider, str] = {
     "ollama": "Ollama",
 }
 
+_OLLAMA_RUNTIME_HEALTH: dict[tuple[str, int, str], bool] = {}
+
+
+def _ensure_langchain_compat_globals() -> None:
+    """Backfill globals expected by older langchain-core releases.
+
+    This environment currently mixes a newer `langchain` package with an older
+    `langchain-core`, and the latter still reads root-module globals such as
+    `langchain.verbose`. Newer `langchain` builds no longer define them.
+    """
+
+    try:
+        import langchain
+    except ImportError:
+        return
+
+    if not hasattr(langchain, "verbose"):
+        langchain.verbose = False
+    if not hasattr(langchain, "debug"):
+        langchain.debug = False
+    if not hasattr(langchain, "llm_cache"):
+        langchain.llm_cache = None
+
 
 def normalize_provider(
     provider: str | None,
@@ -59,6 +82,25 @@ def normalize_provider(
 def get_provider_display_name(provider: str) -> str:
     normalized_provider = normalize_provider(provider, default="google")
     return _PROVIDER_LABELS[normalized_provider]
+
+
+def _format_ollama_runtime_error(
+    *,
+    model_name: str,
+    num_ctx: int,
+    base_url: str,
+    error: Exception,
+) -> str:
+    return (
+        f"Ollama is reachable at {base_url}, but the local model `{model_name}` could not be loaded "
+        f"with num_ctx={num_ctx}. This is an Ollama runtime/model issue rather than a workflow bug.\n"
+        "What to try:\n"
+        f"1. Run `ollama run {model_name}` directly and confirm the model can answer outside this workflow.\n"
+        "2. Restart the Ollama app/server and try again.\n"
+        "3. Free RAM or switch to a smaller local model.\n"
+        "4. If you need the workflow immediately, leave the Ollama prompt blank and use the hosted provider path.\n"
+        f"Original Ollama error: {error}"
+    )
 
 
 def configure_google_model(
@@ -90,6 +132,8 @@ def get_google_model(
 ) -> Any:
     if _MODEL_CONFIG["api_key"] is None:
         configure_google_model()
+
+    _ensure_langchain_compat_globals()
 
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
@@ -141,6 +185,49 @@ def configure_ollama_model(
     os.environ["OLLAMA_BASE_URL"] = resolved_base_url
 
 
+def verify_ollama_model_runtime(
+    model_name: str | None = None,
+    *,
+    num_ctx: int | None = None,
+    base_url: str | None = None,
+) -> None:
+    resolved_model_name = model_name or _OLLAMA_MODEL_CONFIG["model_name"]
+    resolved_num_ctx = num_ctx if num_ctx is not None else _OLLAMA_MODEL_CONFIG["num_ctx"]
+    resolved_base_url = base_url or _OLLAMA_MODEL_CONFIG["base_url"]
+
+    cache_key = (resolved_model_name, resolved_num_ctx, resolved_base_url)
+    if _OLLAMA_RUNTIME_HEALTH.get(cache_key):
+        return
+
+    try:
+        from ollama import Client
+
+        client = Client(host=resolved_base_url, timeout=20)
+        client.chat(
+            model=resolved_model_name,
+            messages=[{"role": "user", "content": "Reply with OK"}],
+            stream=False,
+            think=False,
+            options={
+                "num_ctx": resolved_num_ctx,
+                "num_predict": 1,
+                "temperature": 0,
+            },
+            keep_alive=0,
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            _format_ollama_runtime_error(
+                model_name=resolved_model_name,
+                num_ctx=resolved_num_ctx,
+                base_url=resolved_base_url,
+                error=exc,
+            )
+        ) from exc
+
+    _OLLAMA_RUNTIME_HEALTH[cache_key] = True
+
+
 def get_ollama_model(
     model_name: str | None = None,
     temperature: float | None = None,
@@ -149,6 +236,8 @@ def get_ollama_model(
 ):
     if not _OLLAMA_MODEL_CONFIG["model_name"]:
         configure_ollama_model()
+
+    _ensure_langchain_compat_globals()
 
     try:
         from langchain_ollama import ChatOllama
@@ -205,6 +294,8 @@ def get_groq_model(
 ):
     if _GROQ_MODEL_CONFIG["api_key"] is None:
         configure_groq_model()
+
+    _ensure_langchain_compat_globals()
 
     try:
         from langchain_groq import ChatGroq

@@ -16,7 +16,12 @@ from Agents import (
     pseudoSolutionAgent,
 )
 from templates.state import prState
-from utils.models import DEFAULT_MODEL_NAME, configure_model_provider, normalize_provider
+from utils.models import (
+    DEFAULT_MODEL_NAME,
+    configure_model_provider,
+    normalize_provider,
+    verify_ollama_model_runtime,
+)
 
 
 load_dotenv()
@@ -33,6 +38,7 @@ def initialize_data_generation_runtime() -> tuple[str, str | None]:
     if ollama_model_name:
         os.environ["GITHUB_TOKEN"] = github_token
         configure_model_provider("ollama", model_name=ollama_model_name)
+        verify_ollama_model_runtime(ollama_model_name)
         return "ollama", ollama_model_name
 
     google_api_key = (
@@ -67,6 +73,8 @@ class DataGenerationWorkflow:
             raise ValueError("DataGenerationWorkflow supports only Google or Ollama providers.")
 
         configure_model_provider(self.model_provider, model_name=model_name)
+        if self.model_provider == "ollama":
+            verify_ollama_model_runtime(model_name)
 
         self.pr_retriever = gitPRRetriever(resolved_github_token)
         self.review_instruction_agent = prReviewInstructionAgent(
@@ -114,31 +122,34 @@ class DataGenerationWorkflow:
 
 
 def main() -> None:
-    model_provider, model_name = initialize_data_generation_runtime()
+    try:
+        model_provider, model_name = initialize_data_generation_runtime()
 
-    owner = "pathwaycom"
-    repo = "llm-app"
-    pr_number_text = input("Enter PR number (leave blank to choose interactively): ").strip()
+        owner = "pathwaycom"
+        repo = "llm-app"
+        pr_number_text = input("Enter PR number (leave blank to choose interactively): ").strip()
 
-    initial_state = prState(
-        owner=owner,
-        repo=repo,
-        pr_number=int(pr_number_text) if pr_number_text else None,
-    )
+        initial_state = prState(
+            owner=owner,
+            repo=repo,
+            pr_number=int(pr_number_text) if pr_number_text else None,
+        )
 
-    workflow = DataGenerationWorkflow(model_provider=model_provider, model_name=model_name)
-    print("Starting data generation workflow...")
-    final_state = workflow.graph.invoke(initial_state)
+        workflow = DataGenerationWorkflow(model_provider=model_provider, model_name=model_name)
+        print("Starting data generation workflow...")
+        final_state = workflow.graph.invoke(initial_state)
 
-    print("\n==================\nData Generation Finished!\n==================")
-    if final_state.get("pr_number") is not None:
-        print(f"Reviewed PR: {final_state['pr_number']}")
-    if final_state.get("review_instruct"):
-        print("Review instructions generated successfully.")
-    if final_state.get("pseudo_solution"):
-        print("Pseudo solution generated successfully.")
-    if final_state.get("checklist"):
-        print("Checklist generated successfully.")
+        print("\n==================\nData Generation Finished!\n==================")
+        if final_state.get("pr_number") is not None:
+            print(f"Reviewed PR: {final_state['pr_number']}")
+        if final_state.get("review_instruct"):
+            print("Review instructions generated successfully.")
+        if final_state.get("pseudo_solution"):
+            print("Pseudo solution generated successfully.")
+        if final_state.get("checklist"):
+            print("Checklist generated successfully.")
+    except RuntimeError as exc:
+        print(f"\n{exc}")
 
 
 if __name__ == "__main__":

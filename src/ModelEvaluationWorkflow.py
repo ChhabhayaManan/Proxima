@@ -18,6 +18,7 @@ from utils.models import (
     DEFAULT_MODEL_NAME,
     configure_model_provider,
     normalize_provider,
+    verify_ollama_model_runtime,
 )
 
 
@@ -30,6 +31,7 @@ def initialize_model_evaluation_runtime() -> dict[str, str | None]:
     ).strip()
     if ollama_model_name:
         configure_model_provider("ollama", model_name=ollama_model_name)
+        verify_ollama_model_runtime(ollama_model_name)
         return {
             "review_provider": "ollama",
             "review_model_name": ollama_model_name,
@@ -86,6 +88,10 @@ class ModelEvaluationWorkflow:
 
         configure_model_provider(self.review_provider, model_name=review_model_name)
         configure_model_provider(self.score_provider, model_name=score_model_name)
+        if self.review_provider == "ollama":
+            verify_ollama_model_runtime(review_model_name)
+        if self.score_provider == "ollama":
+            verify_ollama_model_runtime(score_model_name)
 
         self.llm_generated_pr_review_agent = llmGeneratedPRReviewAgent(
             model_name=review_model_name,
@@ -116,32 +122,35 @@ class ModelEvaluationWorkflow:
 
 
 def main() -> None:
-    runtime_config = initialize_model_evaluation_runtime()
+    try:
+        runtime_config = initialize_model_evaluation_runtime()
 
-    # owner = input("Enter repository owner: ").strip()
-    # repo = input("Enter repository name: ").strip()
-    owner = "pathwaycom"
-    repo = "llm-app"
-    pr_number = int(input("Enter PR number: ").strip())
+        # owner = input("Enter repository owner: ").strip()
+        # repo = input("Enter repository name: ").strip()
+        owner = "pathwaycom"
+        repo = "llm-app"
+        pr_number = int(input("Enter PR number: ").strip())
 
-    workflow = ModelEvaluationWorkflow(
-        review_provider=runtime_config["review_provider"] or "groq",
-        review_model_name=runtime_config["review_model_name"],
-        score_provider=runtime_config["score_provider"] or "google",
-        score_model_name=runtime_config["score_model_name"],
-    )
-    initial_state = prState(owner=owner, repo=repo, pr_number=pr_number)
+        workflow = ModelEvaluationWorkflow(
+            review_provider=runtime_config["review_provider"] or "groq",
+            review_model_name=runtime_config["review_model_name"],
+            score_provider=runtime_config["score_provider"] or "google",
+            score_model_name=runtime_config["score_model_name"],
+        )
+        initial_state = prState(owner=owner, repo=repo, pr_number=pr_number)
 
-    print("Starting model evaluation workflow...")
-    final_state = workflow.graph.invoke(initial_state)
+        print("Starting model evaluation workflow...")
+        final_state = workflow.graph.invoke(initial_state)
 
-    print("\n==================\nModel Evaluation Finished!\n==================")
-    if final_state.get("pr_number") is not None:
-        print(f"Reviewed PR: {final_state['pr_number']}")
-    if final_state.get("llm_generated_pr_review"):
-        print("LLM-generated PR review generated successfully.")
-    if final_state.get("score"):
-        print("Score generated successfully.")
+        print("\n==================\nModel Evaluation Finished!\n==================")
+        if final_state.get("pr_number") is not None:
+            print(f"Reviewed PR: {final_state['pr_number']}")
+        if final_state.get("llm_generated_pr_review"):
+            print("LLM-generated PR review generated successfully.")
+        if final_state.get("score"):
+            print("Score generated successfully.")
+    except RuntimeError as exc:
+        print(f"\n{exc}")
 
 
 if __name__ == "__main__":
