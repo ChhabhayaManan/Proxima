@@ -70,7 +70,7 @@ class gitPRRetriever:
         print("PR number : title")
 
         candidate_prs = []
-        for pr in repo.get_pulls(state="closed", sort="updated", direction="desc"):
+        for pr in repo.get_pulls(state="closed", sort="created", direction="asc"):
             if pr.changed_files >= 5:
                 continue
 
@@ -270,5 +270,5 @@ if __name__ == "__main__":
         raise ValueError("Set GITHUB_TOKEN in your environment before running this script.")
 
     scraper = gitPRRetriever(token)
-    state = prState(owner="Mintplex-Labs", repo="anything-llm", pr_number=1)
+    state = prState(owner="pathwaycom", repo="llm-app", pr_number=0)
     scraper.run(state)

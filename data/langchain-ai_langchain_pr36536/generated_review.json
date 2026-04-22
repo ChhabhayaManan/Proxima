@@ -1,0 +1,4 @@
+{
+    "summary": "No meaningful differences were found between the generated version and the reference version. The proposed changes in the generated version, including the addition of `chat_template_kwargs` and associated unit tests, are already present in the reference implementation.",
+    "comments": []
+}

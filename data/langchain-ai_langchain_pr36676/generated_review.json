@@ -1,0 +1,29 @@
+{
+    "summary": "The generated code correctly implements the input validation for non-positive batch sizes. However, it misses docstrings for both `_batch` and `_abatch` utility functions. Additionally, the `_abatch` implementation, while functionally correct, is less concise and idiomatic compared to the reference version.",
+    "comments": [
+        {
+            "file_path": "libs/core/langchain_core/indexing/api.py",
+            "line_reference": "def _batch(size: int, iterable: Iterable[T]) -> Iterator[list[T]]:",
+            "severity": "low",
+            "category": "maintainability",
+            "comment": "The `_batch` function is missing its docstring. Please add a docstring to explain its purpose as a utility batching function, similar to the reference implementation.",
+            "suggestion": "Add `\"\"\"Utility batching function.\"\"\"` as the first line of the function body."
+        },
+        {
+            "file_path": "libs/core/langchain_core/indexing/api.py",
+            "line_reference": "async def _abatch(size: int, iterable: AsyncIterable[T]) -> AsyncIterator[list[T]]:",
+            "severity": "low",
+            "category": "maintainability",
+            "comment": "The `_abatch` function is missing its docstring. Please add a docstring to explain its purpose as a utility batching function, similar to the reference implementation.",
+            "suggestion": "Add `\"\"\"Utility batching function.\"\"\"` as the first line of the function body."
+        },
+        {
+            "file_path": "libs/core/langchain_core/indexing/api.py",
+            "line_reference": "        if len(batch) < size:\n            batch.append(element)\n\n        if len(batch) >= size:",
+            "severity": "low",
+            "category": "maintainability",
+            "comment": "The batching logic in `_abatch` can be simplified. The `if len(batch) < size:` condition is redundant as `batch.append(element)` will always increase the length by one, and `len(batch)` will only ever equal `size` (not exceed it) before the batch is yielded and reset. The reference implementation uses a more concise approach.",
+            "suggestion": "Consider refactoring the batching logic to match the reference for better conciseness:\n```python\n        batch.append(element)\n        if len(batch) == size:\n            yield batch\n            batch = []\n```"
+        }
+    ]
+}
