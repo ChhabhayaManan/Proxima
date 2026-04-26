@@ -34,6 +34,52 @@ except ImportError as e:
     st.error(f"Failed to import Proxima modules. Error: {e}")
 
 st.set_page_config(page_title="Sphinx PR Review Simulator", layout="wide")
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+    html, body, [class*="css"]  {
+        font-family: 'Inter', sans-serif;
+    }
+    .gh-comment-card {
+        border: 1px solid #d0d7de;
+        border-radius: 6px;
+        margin-bottom: 16px;
+        background-color: #ffffff;
+    }
+    .gh-comment-header {
+        background-color: #f6f8fa;
+        border-bottom: 1px solid #d0d7de;
+        padding: 10px 16px;
+        border-top-left-radius: 6px;
+        border-top-right-radius: 6px;
+        font-size: 14px;
+        color: #57606a;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .gh-avatar {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background-color: #24292f;
+        display: inline-block;
+    }
+    .metric-value {
+        font-size: 36px;
+        font-weight: 600;
+        line-height: 1.2;
+    }
+    .metric-label {
+        font-size: 14px;
+        color: #57606a;
+        margin-bottom: 8px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+</style>
+""", unsafe_allow_html=True)
 # --- SIDEBAR: Configuration ---
 with st.sidebar:
     st.header("⚙️ Pipeline Configuration")
@@ -214,15 +260,19 @@ if st.session_state.workflow_completed and st.session_state.final_state:
             st.divider()
             
             for index, c in enumerate(r_dict.get('comments', [])):
-                sev = c.get('severity', 'LOW').upper()
-                
-                with st.expander(f"[{sev}] {c.get('file_path', '')} (Line {c.get('line_reference', 'N/A')})"):
-                    st.markdown(f"**Category:** `{c.get('category', 'General')}`")
-                    st.write(c.get('comment', ''))
+                st.markdown(f"""
+                <div class="gh-comment-card">
+                    <div class="gh-comment-header">
+                        <div class="gh-avatar"></div>
+                        <b>AI Reviewer</b> commented on <code>{c.get('file_path', 'unknown')}</code> (Line: {c.get('line_reference', 'N/A')}) • Category: {c.get('category', 'General')}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                st.markdown(c.get('comment', ''))
                     
-                    if c.get('suggestion'):
-                        # Using info banner instead of python code block for plain english
-                        st.info(f"**Suggestion:** {c.get('suggestion')}")
+                if c.get('suggestion'):
+                    st.info(f"**Suggestion:** {c.get('suggestion')}")
+                st.write("")
         else:
             st.info("No LLM PR Review was generated.")
             
@@ -235,15 +285,10 @@ if st.session_state.workflow_completed and st.session_state.final_state:
             items = c_dict.get('items', [])
             if items:
                 for idx, item in enumerate(items):
-                    sev = item.get('severity', 'low').upper()
-                    # Render dynamically grouped, beautiful checklist cards
                     st.markdown(f"""
-                        <div class="checklist-item">
-                            <b>Item {idx+1} ({sev})</b> — <code>{item.get('file_path', '')}</code><br/>
-                            <b>Target:</b> {item.get('target', '')}<br/>
-                            <b>Verify:</b> {item.get('verification_point', '')}<br/>
-                            <b>Expected:</b> {item.get('expected_outcome', '')}
-                        </div>
+                    - [ ] <b><code>{item.get('file_path', 'Unknown')}</code> | Target: {item.get('target', '')}</b><br/>
+                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Verify:</b> {item.get('verification_point', '')}<br/>
+                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#2da44e;"><b>Expected:</b> {item.get('expected_outcome', '')}</span><br/><br/>
                     """, unsafe_allow_html=True)
             else:
                 st.warning("No items found in checklist.")
@@ -263,11 +308,15 @@ if st.session_state.workflow_completed and st.session_state.final_state:
             
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.markdown(f"<div class='metric-value'>{matched}</div><div>Matched Items</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='metric-value'>{matched}</div><div class='metric-label'>Matched Items</div>", unsafe_allow_html=True)
             with col2:
-                st.markdown(f"<div class='metric-value'>{total}</div><div>Total Items Required</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='metric-value'>{total}</div><div class='metric-label'>Total Items Required</div>", unsafe_allow_html=True)
             with col3:
-                st.markdown(f"<div class='metric-value'>{coverage:.1f}%</div><div>Coverage Score</div>", unsafe_allow_html=True)
+                color = "#2da44e" if coverage >= 80 else ("#d4a72c" if coverage >= 50 else "#cf222e")
+                st.markdown(f"<div class='metric-value' style='color:{color};'>{coverage:.1f}%</div><div class='metric-label'>Coverage Score</div>", unsafe_allow_html=True)
+            
+            st.markdown("<br/>", unsafe_allow_html=True)
+            st.progress(min(max(coverage / 100.0, 0.0), 1.0))
             
             st.divider()
             st.write(f"**Methodology:** Evaluated utilizing `{s_dict.get('evaluation_mode', 'Unknown')}` mode.")

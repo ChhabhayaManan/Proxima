@@ -126,12 +126,6 @@ Field requirements:
 - `target`: exact symbol, code region, string, condition, import, UI element, or pattern to verify
 - `verification_point`: what should be checked
 - `expected_outcome`: what should be true if the implementation is correct
-- `severity`: one of `low`, `medium`, or `high`
-
-Severity guidance:
-- high: core functional issue, missing behavior, or incorrect implementation
-- medium: important implementation detail, regression-sensitive logic, or maintainability issue
-- low: secondary clarity, consistency, or polish issue
 
 Pseudo Solution:
 {pseudo_solution.strip()}

@@ -60,10 +60,6 @@ class ReviewComment(BaseModel):
         default=None,
         description="Approximate line, block, or symbol reference if available.",
     )
-    severity: str = Field(
-        ...,
-        description="Severity of the review comment: low, medium, or high.",
-    )
     category: str = Field(
         ...,
         description="Category of the review comment such as correctness, UX, maintainability, error_handling, or consistency.",
@@ -105,10 +101,6 @@ class ReviewChecklistItem(BaseModel):
     expected_outcome: str = Field(
         ...,
         description="Expected behavior or code outcome if the implementation is correct.",
-    )
-    severity: str = Field(
-        ...,
-        description="Importance of the checklist item, e.g. low, medium, high.",
     )
 
 class ReviewChecklist(BaseModel):
