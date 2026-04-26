@@ -3,13 +3,14 @@ import json
 from pydantic import BaseModel
 from templates.prompt import build_pseudo_solution_generation_prompt
 from templates.state import PseudoSolution, prState
-from utils.models import get_structured_google_model
+from utils.models import get_structured_provider_model
 
 
 class pseudoSolutionAgent:
-    def __init__(self, model_name: str | None = None):
-        self.model = get_structured_google_model(
-            PseudoSolution,
+    def __init__(self, provider: str = "Google Gemini", model_name: str | None = None):
+        self.model = get_structured_provider_model(
+            provider=provider,
+            output_schema=PseudoSolution,
             model_name=model_name,
         )
 

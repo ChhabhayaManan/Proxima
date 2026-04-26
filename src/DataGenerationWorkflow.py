@@ -46,19 +46,17 @@ def initialize_data_generation_runtime() -> None:
 
 
 class DataGenerationWorkflow:
-    def __init__(self):
+    def __init__(self, provider: str = "Google Gemini", model_name: str | None = None):
         resolved_github_token = (os.getenv("GITHUB_TOKEN") or "").strip()
         if not resolved_github_token:
             raise ValueError(
                 "A GitHub token is required. Set GITHUB_TOKEN or call initialize_data_generation_runtime() first."
             )
 
-        configure_google_model()
-
         self.pr_retriever = gitPRRetriever(resolved_github_token)
-        self.review_instruction_agent = prReviewInstructionAgent()
-        self.pseudo_solution_agent = pseudoSolutionAgent()
-        self.checklist_generation_agent = checklistGenerationAgent()
+        self.review_instruction_agent = prReviewInstructionAgent(provider=provider, model_name=model_name)
+        self.pseudo_solution_agent = pseudoSolutionAgent(provider=provider, model_name=model_name)
+        self.checklist_generation_agent = checklistGenerationAgent(provider=provider, model_name=model_name)
 
         proxima_workflow = StateGraph(prState)
         proxima_workflow.add_node("retrieve_pr", self.retrieve_pr_node)

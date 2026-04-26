@@ -151,30 +151,34 @@ Output JSON schema:
 
 def build_llm_generated_pr_review_prompt(
     pr_metadata: str,
-    original_code: str,
-    generated_code: str,
+    merged_code: str,
+    pseudo_solution: str,
 ) -> str:
-    return f"""You are an expert software engineer performing a code review on a pull request.
+    return f"""You are an expert, meticulous software engineer performing a precise code review on a pull request.
 
 You are given:
-- The pull request metadata, including title and description
-- The full original version of the modified file(s) (before changes)
-- The generated code (generated code introduced in the PR.)
+- PR Metadata: The title and description of the intended changes.
+- Merged Code: The merged code after the changes.
+- Generated Code: The generated pseudo solution from the pr review instructions.
 
-Your job is to provide precise, objective, and actionable review comments based on the changes introduced in the pull request. Use the full original source for understanding context and identifying problems.
+Your task is to provide objective, actionable, and specific review comments analyzing the Generated Code.
+Compare the Generated Code against the Merged Code and the requirements in the PR Metadata. You must aggressively identify logical errors, incomplete implementations, missing edge cases, syntax issues, or poor practices.
 
-Once you have identified issues in the code, return them as a JSON list, enclosed in backticks with JSON syntax highlighting.
-
-If you find the pull request is 100% correct, output: "No comment."
+Rules:
+- Be highly specific. Vague suggestions do not count.
+- Point out exactly what is wrong and how to fix it.
+- Your output MUST absolutely be a JSON object containing a `summary` field and a `comments` array matching the schema. NEVER return just a plain array.
+- If no issues are found, return a JSON object with your `summary` and an empty `comments` array.
+- STRICTLY return valid JSON matching the explicit schema parameters natively. Do not wrap your JSON in markdown backticks or formatting.
 
 PR metadata:
 {pr_metadata.strip()}
 
-Original code:
-{original_code.strip()}
+Merged code:
+{merged_code.strip()}
 
-LLM-generated code:
-{generated_code.strip()}
+Pseudo solution:
+{pseudo_solution.strip()}
 
 Output JSON schema:
 {json.dumps(GeneratedPRReview.model_json_schema(), indent=2)}
@@ -185,22 +189,33 @@ def build_checklist_score_prompt(
     checklist: str,
     code_review: str,
 ) -> str:
-    return f"""You are given a checklist and a code review.
+    return f"""You are an automated code evaluation engine calculating benchmark coverage for a pull request review.
 
-Your task is to determine how many checklist items are mentioned or addressed in the code review.
+You are given:
+1. Checklist items (The ground-truth bugs that existed)
+2. Generated code review comments (The AI's attempt to find those bugs)
 
-Rules:
-- Return only a single number: the count of checklist items matched in the review.
-- If the checklist is `No checklist`, determine whether the code review truly suggests something.
-- If the code review contains any meaningful suggestion or feedback, return 0.
-- If the code review implies there is nothing to check, return 1.
-- Ignore the purpose, change, and other background information. Focus only on the suggestions.
-- If there is no suggestion or only blank suggestion content, return 1.
+Task:
+Evaluate EACH checklist item one by one silently. 
+Count an item as matched ONLY if the review clearly and specifically calls out the exact same core issue.
+
+Matching Rules:
+- Semantic equivalence is highly allowed.
+- Generic, vague advice does NOT count.
+
+- Partial overlap counts ONLY if the main concern is clearly addressed.
+
+Procedure:
+1. For each checklist item, mentally decide MATCHED or NOT MATCHED.
+2. Count the total matched items.
+3. OUTPUT ONLY THE FINAL TOTAL INTEGER.
+
+CRITICAL: Your entire response must consist of exactly ONE character/number. Do not include step-by-step reasoning, bullet points, explanations, or any other words. If the score is 3, your entire output must be "3".
 
 Checklist:
-{checklist.strip()}
+{checklist}
 
-Code review:
-{code_review.strip()}
+Code Review:
+{code_review}
 """
 

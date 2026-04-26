@@ -7,12 +7,12 @@ from pydantic import BaseModel
 
 from templates.prompt import build_checklist_score_prompt
 from templates.state import ChecklistScore, ReviewChecklist, prState
-from utils.models import get_google_model
+from utils.models import get_provider_model
 
 
 class scoreGenerationAgent:
-    def __init__(self, model_name: str | None = None):
-        self.model = get_google_model(model_name=model_name, temperature=0)
+    def __init__(self, provider: str = "Google Gemini", model_name: str | None = None):
+        self.model = get_provider_model(provider=provider, model_name=model_name, temperature=0)
 
     def run(self, state: prState) -> dict:
         if state.pr_number is None:

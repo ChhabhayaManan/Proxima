@@ -6,20 +6,17 @@ from pydantic import BaseModel
 
 from templates.prompt import build_llm_generated_pr_review_prompt
 from templates.state import GeneratedPRReview, PseudoSolution, prState
-from utils.models import (
-    DEFAULT_GROQ_MODEL_NAME,
-    configure_groq_model,
-    get_structured_groq_model,
-)
+from utils.models import get_structured_provider_model
 
 
 load_dotenv()
 
 
 class llmGeneratedPRReviewAgent:
-    def __init__(self, model_name: str | None = DEFAULT_GROQ_MODEL_NAME):
-        self.model = get_structured_groq_model(
-            GeneratedPRReview,
+    def __init__(self, provider: str = "Groq", model_name: str | None = None):
+        self.model = get_structured_provider_model(
+            provider=provider,
+            output_schema=GeneratedPRReview,
             model_name=model_name,
         )
 
@@ -40,11 +37,11 @@ class llmGeneratedPRReviewAgent:
 
         prompt = build_llm_generated_pr_review_prompt(
             pr_metadata=json.dumps(data_bundle.get("pr_details", {}), indent=2, ensure_ascii=False),
-            original_code=json.dumps(data_bundle.get("base_code", {}), indent=2, ensure_ascii=False),
-            generated_code=json.dumps(self.serialize_value(state.pseudo_solution), indent=2, ensure_ascii=False),
+            merged_code=json.dumps(data_bundle.get("merged_code", {}), indent=2, ensure_ascii=False),
+            pseudo_solution=json.dumps(self.serialize_value(state.pseudo_solution), indent=2, ensure_ascii=False),
         )
 
-        print("Generating LLM-generated PR review with Groq using PR metadata, original code, pseudo solution, and merged code...")
+        print("Generating LLM-generated PR review with Groq using PR metadata, merged code, and pseudo solution...")
         llm_generated_pr_review = self.model.invoke(prompt)
 
         state.llm_generated_pr_review = llm_generated_pr_review
@@ -54,7 +51,7 @@ class llmGeneratedPRReviewAgent:
     def load_pr_data(self, folder_path: str) -> dict:
         required_files = {
             "pr_details": "pr_details.json",
-            "base_code": "base_code.json",
+            "merged_code": "merged_code.json",
             "pseudo_solution": "pseudo_solution.json"
         }
 
