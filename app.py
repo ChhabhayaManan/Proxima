@@ -40,17 +40,29 @@ with st.sidebar:
     
     st.subheader("1. Data Generation Model")
     st.markdown("Generates the Review Checklist")
-    data_provider = st.selectbox("Data Provider", ["Google Gemini", "Groq"], index=0, key="data_provider")
-    data_model = st.text_input("Model Name", value="gemini-3.1-flash-lite-preview", key="data_model")
-    data_api_key = st.text_input("API Key", type="password", key="data_api_key")
+    data_provider = st.selectbox("Data Provider", ["Google Gemini", "Groq", "Ollama"], index=0, key="data_provider")
+    data_base_url = None
+    if data_provider == "Ollama":
+        data_model = st.text_input("Model Name", value="llama3.2", key="data_model")
+        data_base_url = st.text_input("Ollama Server URL", value="http://localhost:11434", help="Use https://ollama.com for Cloud hosted", key="data_base_url")
+        data_api_key = st.text_input("API Key (Optional)", type="password", help="Leave blank for Local execution.", key="data_api_key")
+    else:
+        data_model = st.text_input("Model Name", value="gemini-3.1-flash-lite-preview", key="data_model")
+        data_api_key = st.text_input("API Key", type="password", key="data_api_key")
     
     st.divider()
     
     st.subheader("2. Model Under Evaluation")
     st.markdown("Generates the PR Review to be Scored")
-    eval_provider = st.selectbox("Evaluation Provider", ["Groq", "Google Gemini"], index=0, key="eval_provider")
-    eval_model = st.text_input("Model Name", value="meta-llama/llama-4-scout-17b-16e-instruct", key="eval_model")
-    eval_api_key = st.text_input("Evaluation API Key", type="password", key="eval_api_key")
+    eval_provider = st.selectbox("Evaluation Provider", ["Groq", "Google Gemini", "Ollama"], index=0, key="eval_provider")
+    eval_base_url = None
+    if eval_provider == "Ollama":
+        eval_model = st.text_input("Model Name", value="llama3.2", key="eval_model")
+        eval_base_url = st.text_input("Ollama Server URL", value="http://localhost:11434", help="Use https://ollama.com for Cloud hosted", key="eval_base_url")
+        eval_api_key = st.text_input("API Key (Optional)", type="password", help="Leave blank for Local execution.", key="eval_api_key")
+    else:
+        eval_model = st.text_input("Model Name", value="meta-llama/llama-4-scout-17b-16e-instruct", key="eval_model")
+        eval_api_key = st.text_input("Evaluation API Key", type="password", key="eval_api_key")
 
 # --- MAIN CONTENT / EDUCATIONAL HEADER ---
 st.title("Proxima: AI Model Benchmarking Simulator")
@@ -125,18 +137,22 @@ if st.button("Run Workflow", type="primary", width="stretch"):
     if not os.getenv("GITHUB_TOKEN"):
         st.warning("Please ensure GITHUB_TOKEN is set in your .env file or environment.")
     else:
-        from utils.models import configure_google_model, configure_groq_model
+        from utils.models import configure_google_model, configure_groq_model, configure_ollama_model
 
         # Configure models based on the sidebar configs
         if data_provider == "Google Gemini":
             configure_google_model(api_key=data_api_key, model_name=data_model)
         elif data_provider == "Groq":
             configure_groq_model(api_key=data_api_key, model_name=data_model)
+        elif data_provider == "Ollama":
+            configure_ollama_model(base_url=data_base_url, api_key=data_api_key, model_name=data_model)
             
         if eval_provider == "Groq":
             configure_groq_model(api_key=eval_api_key, model_name=eval_model) 
         elif eval_provider == "Google Gemini":
             configure_google_model(api_key=eval_api_key, model_name=eval_model)
+        elif eval_provider == "Ollama":
+            configure_ollama_model(base_url=eval_base_url, api_key=eval_api_key, model_name=eval_model)
             
         with st.status("Executing Sequential Workflows...", expanded=True) as status:
             st.write("Initializing Workflow...")

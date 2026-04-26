@@ -24,6 +24,15 @@ _GROQ_MODEL_CONFIG: dict[str, Any] = {
     "temperature": DEFAULT_TEMPERATURE,
 }
 
+DEFAULT_OLLAMA_MODEL_NAME = "llama3.2"
+
+_OLLAMA_MODEL_CONFIG: dict[str, Any] = {
+    "base_url": "http://localhost:11434",
+    "api_key": None,
+    "model_name": DEFAULT_OLLAMA_MODEL_NAME,
+    "temperature": DEFAULT_TEMPERATURE,
+}
+
 
 def configure_google_model(
     api_key: str | None = None,
@@ -127,12 +136,55 @@ def get_structured_groq_model(
     ).with_structured_output(output_schema)
 
 
+def configure_ollama_model(
+    base_url: str | None = None,
+    api_key: str | None = None,
+    model_name: str | None = None,
+    temperature: float | None = None,
+) -> None:
+    if base_url:
+        _OLLAMA_MODEL_CONFIG["base_url"] = base_url.strip()
+    if api_key:
+        _OLLAMA_MODEL_CONFIG["api_key"] = api_key.strip()
+    if model_name is not None:
+        _OLLAMA_MODEL_CONFIG["model_name"] = model_name
+    if temperature is not None:
+        _OLLAMA_MODEL_CONFIG["temperature"] = temperature
+
+
+def get_ollama_model(
+    model_name: str | None = None,
+    temperature: float | None = None,
+):
+    try:
+        from langchain_ollama import ChatOllama
+    except ImportError as exc:
+        raise ImportError(
+            "langchain-ollama is required for Local models. Install it with `pip install langchain-ollama`."
+        ) from exc
+
+    kwargs = {
+        "model": model_name or _OLLAMA_MODEL_CONFIG["model_name"],
+        "temperature": temperature if temperature is not None else _OLLAMA_MODEL_CONFIG["temperature"],
+        "base_url": _OLLAMA_MODEL_CONFIG["base_url"],
+    }
+    
+    if _OLLAMA_MODEL_CONFIG["api_key"]:
+        kwargs["client_kwargs"] = {
+            "headers": {"Authorization": f"Bearer {_OLLAMA_MODEL_CONFIG['api_key']}"}
+        }
+
+    return ChatOllama(**kwargs)
+
+
 def get_provider_model(provider: str, model_name: str | None = None, temperature: float | None = None):
     """Dynamically return the requested LLM from the provider string."""
     if provider.lower() == "groq":
         return get_groq_model(model_name=model_name, temperature=temperature)
     elif provider.lower() in ("google gemini", "gemini", "google"):
         return get_google_model(model_name=model_name, temperature=temperature)
+    elif provider.lower() in ("ollama", "ollama (local)"):
+        return get_ollama_model(model_name=model_name, temperature=temperature)
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
 
@@ -141,3 +193,4 @@ def get_structured_provider_model(provider: str, output_schema: Any, model_name:
     """Dynamically return a structured output model from the requested provider."""
     model = get_provider_model(provider=provider, model_name=model_name, temperature=temperature)
     return model.with_structured_output(output_schema)
+
