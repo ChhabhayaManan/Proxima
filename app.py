@@ -11,7 +11,7 @@ def fetch_closed_prs(owner: str, repo: str, token: str):
     if token:
         headers["Authorization"] = f"Bearer {token}"
     
-    url = f"https://api.github.com/repos/{owner}/{repo}/pulls?state=closed&per_page=15"
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls?state=closed&per_page=25"
     try:
         response = requests.get(url, headers=headers)
         response.raise_for_status()
@@ -131,17 +131,22 @@ with col2:
 
 pr_number = 0
 
-if st.button("Fetch Closed PRs", help="Pull the 15 most recent closed PRs from GitHub"):
-    if repo_owner and repo_name:
-        prs = fetch_closed_prs(repo_owner, repo_name, os.getenv("GITHUB_TOKEN"))
-        st.session_state.fetched_prs = prs
-    else:
-        st.warning("Please enter an Owner and Repository name.")
+pr_selection_mode = st.radio("PR Selection Method", ["Select from Recent", "Enter PR Number Manually"], horizontal=True)
 
-if "fetched_prs" in st.session_state and st.session_state.fetched_prs:
-    pr_options = {f"PR #{item['number']}: {item['title']}": item['number'] for item in st.session_state.fetched_prs}
-    selected_pr_label = st.selectbox("Choose a Pull Request to Benchmark", list(pr_options.keys()))
-    pr_number = pr_options.get(selected_pr_label, 0)
+if pr_selection_mode == "Select from Recent":
+    if st.button("Fetch Closed PRs", help="Pull the 25 most recent closed PRs from GitHub"):
+        if repo_owner and repo_name:
+            prs = fetch_closed_prs(repo_owner, repo_name, os.getenv("GITHUB_TOKEN"))
+            st.session_state.fetched_prs = prs
+        else:
+            st.warning("Please enter an Owner and Repository name.")
+
+    if "fetched_prs" in st.session_state and st.session_state.fetched_prs:
+        pr_options = {f"PR #{item['number']}: {item['title']}": item['number'] for item in st.session_state.fetched_prs}
+        selected_pr_label = st.selectbox("Choose a Pull Request to Benchmark", list(pr_options.keys()))
+        pr_number = pr_options.get(selected_pr_label, 0)
+else:
+    pr_number = st.number_input("Enter Pull Request Number", min_value=1, step=1, value=1)
 
 # State management for results
 if "workflow_completed" not in st.session_state:
