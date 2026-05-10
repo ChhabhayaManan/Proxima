@@ -38,9 +38,9 @@ class _SequentialWorkflowGraph:
 
 
 class Workflow:
-    def __init__(self):
-        self.data_generation_workflow = DataGenerationWorkflow()
-        self.model_evaluation_workflow = ModelEvaluationWorkflow()
+    def __init__(self, data_provider: str = "Google Gemini", data_model: str | None = None, eval_provider: str = "Groq", eval_model: str | None = None):
+        self.data_generation_workflow = DataGenerationWorkflow(provider=data_provider, model_name=data_model)
+        self.model_evaluation_workflow = ModelEvaluationWorkflow(provider=eval_provider, model_name=eval_model)
         self.graph = _SequentialWorkflowGraph(
             data_generation_workflow=self.data_generation_workflow,
             model_evaluation_workflow=self.model_evaluation_workflow,

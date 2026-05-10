@@ -1,0 +1,2 @@
+pr_number,title,merged_at,changed_files,additions,deletions,status,error,checklist_items,llm_review_comments,matched_items,total_items,coverage_score,evaluation_mode,A_avg,B_avg,C_avg,overall_avg,notes
+4,add code for s3 docs,2023-07-20T08:47:12+00:00,3,111,1,failed,"503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}",0,0,,,,,,,,,

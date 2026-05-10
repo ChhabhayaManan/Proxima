@@ -52,12 +52,9 @@ def initialize_model_evaluation_runtime() -> None:
 
 
 class ModelEvaluationWorkflow:
-    def __init__(self):
-        configure_google_model()
-        configure_groq_model()
-
-        self.llm_generated_pr_review_agent = llmGeneratedPRReviewAgent()
-        self.score_generation_agent = scoreGenerationAgent()
+    def __init__(self, provider: str = "Groq", model_name: str | None = None):
+        self.llm_generated_pr_review_agent = llmGeneratedPRReviewAgent(provider=provider, model_name=model_name)
+        self.score_generation_agent = scoreGenerationAgent(provider=provider, model_name=model_name)
 
         proxima_workflow = StateGraph(prState)
         proxima_workflow.add_node("generate_llm_pr_review", self.generate_llm_pr_review_node)

@@ -2,12 +2,13 @@ import os
 import json
 from templates.prompt import build_review_instruction_generation_prompt
 from templates.state import ReviewInstruction, prState
-from utils.models import get_structured_google_model
+from utils.models import get_structured_provider_model
 
 class prReviewInstructionAgent:
-    def __init__(self, model_name: str | None = None):
-        self.model = get_structured_google_model(
-            ReviewInstruction,
+    def __init__(self, provider: str = "Google Gemini", model_name: str | None = None):
+        self.model = get_structured_provider_model(
+            provider=provider,
+            output_schema=ReviewInstruction,
             model_name=model_name,
         )
 
